@@ -24,12 +24,12 @@ import {
   isValidTimeZone,
   setGuildConfig,
 } from '../services/guildConfigService.js';
-import type { SupportedLocale } from '../types.js';
+import { PRIMARY_COLOR, type SupportedLocale } from '../types.js';
 import { formatLocalDateTimeDisplay, hasGuildAdminPermission } from '../utils/validators.js';
 
 function buildLangStepPayload(locale: SupportedLocale) {
   const embed = new EmbedBuilder()
-    .setColor(0x5865f2)
+    .setColor(PRIMARY_COLOR)
     .setTitle(t(locale, 'setupStep1Title'))
     .setDescription(t(locale, 'setupStep1Desc'));
 
@@ -37,8 +37,8 @@ function buildLangStepPayload(locale: SupportedLocale) {
     .setCustomId('setup:lang')
     .setPlaceholder(t(locale, 'setupLangPlaceholder'))
     .addOptions(
-      { label: 'Français (fr)', value: 'fr', emoji: '🇫🇷', default: locale === 'fr' },
-      { label: 'English (en)', value: 'en', emoji: '🇬🇧', default: locale === 'en' }
+      { label: 'Français (fr)', value: 'fr', emoji: '🇫🇷' },
+      { label: 'English (en)', value: 'en', emoji: '🇬🇧' }
     );
 
   const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(select);
@@ -47,7 +47,7 @@ function buildLangStepPayload(locale: SupportedLocale) {
 
 function buildTimezoneStepPayload(locale: SupportedLocale) {
   const embed = new EmbedBuilder()
-    .setColor(0x5865f2)
+    .setColor(PRIMARY_COLOR)
     .setTitle(t(locale, 'setupStep2Title'))
     .setDescription(t(locale, 'setupStep2Desc', { lang: locale.toUpperCase() }));
 
@@ -77,7 +77,7 @@ async function finalizeSetup(guild: Guild, locale: SupportedLocale, timezone: st
 
   const topic = formatConfigTopic(updated.timezone, updated.locale);
   const summaryEmbed = new EmbedBuilder()
-    .setColor(0x57f287)
+    .setColor(PRIMARY_COLOR)
     .setTitle(t(updated.locale, 'pinnedSummaryTitle'))
     .setDescription(t(updated.locale, 'pinnedSummaryDesc'))
     .setFooter({ text: t(updated.locale, 'pinnedSummaryFooter', { topic }) })
@@ -104,7 +104,7 @@ async function finalizeSetup(guild: Guild, locale: SupportedLocale, timezone: st
 
   const localTime = formatLocalDateTimeDisplay(updated.timezone, updated.locale);
   const confirmEmbed = new EmbedBuilder()
-    .setColor(0x57f287)
+    .setColor(PRIMARY_COLOR)
     .setTitle(t(updated.locale, 'setupCompleteTitle'))
     .setDescription(
       t(updated.locale, 'setupCompleteDesc', {

@@ -69,16 +69,22 @@ export async function upsertEvent(
   const channelName = buildEventChannelName(type, day, month);
   const cleanValue = value.trim();
 
-  const existing = guild.channels.cache.find(
-    (ch): ch is TextChannel =>
-      ch.type === ChannelType.GuildText &&
-      ch.parentId === category.id &&
-      ch.name.toLowerCase() === channelName
+  const matching = Array.from(
+    guild.channels.cache.filter(
+      (ch): ch is TextChannel =>
+        ch.type === ChannelType.GuildText &&
+        ch.parentId === category.id &&
+        ch.name.toLowerCase() === channelName
+    ).values()
   );
 
-  if (existing) {
-    await existing.setTopic(cleanValue, 'Logoto event value update');
-    return { channel: existing, created: false };
+  if (matching.length > 0) {
+    const [primary, ...duplicates] = matching;
+    await primary.setTopic(cleanValue, 'Logoto event value update');
+    for (const dup of duplicates) {
+      await dup.delete('Logoto combine duplicate event channel').catch(() => {});
+    }
+    return { channel: primary, created: false };
   }
 
   const botId = guild.client.user?.id;

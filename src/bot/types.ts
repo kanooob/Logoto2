@@ -1,5 +1,7 @@
 import type { CategoryChannel, TextChannel } from 'discord.js';
 
+export const PRIMARY_COLOR = 0x8c935d;
+
 export type SupportedLocale = 'fr' | 'en';
 
 export type EventType = 'l' | 'n' | 'b' | 'i';

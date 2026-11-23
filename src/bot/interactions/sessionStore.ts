@@ -16,7 +16,7 @@ export interface SettingsDraftSession {
   updatedAt: number;
 }
 
-const SESSION_TTL_MS = 15 * 60 * 1000;
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 const setupSessions = new Map<string, SetupSession>();
 const settingsSessions = new Map<string, SettingsDraftSession>();

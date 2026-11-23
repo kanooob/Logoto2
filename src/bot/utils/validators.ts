@@ -1,5 +1,12 @@
-import { PermissionsBitField, type Guild, type GuildMember, type PermissionsBitField as PermissionsType } from 'discord.js';
-import type { SupportedLocale } from '../types.js';
+import {
+  GuildPremiumTier,
+  PermissionsBitField,
+  type Guild,
+  type GuildMember,
+  type PermissionsBitField as PermissionsType,
+} from 'discord.js';
+import { t } from '../i18n/index.js';
+import type { EventType, SupportedLocale } from '../types.js';
 
 const PRIVATE_IPV4_REGEX = /^(127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[0-1])\.)/;
 
@@ -36,6 +43,53 @@ export function isSafeImageUrl(raw: string): boolean {
 export function isValidServerName(raw: string): boolean {
   const trimmed = raw.trim();
   return trimmed.length >= 2 && trimmed.length <= 100;
+}
+
+export function parseValidDay(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!/^\d{1,2}$/.test(trimmed)) return null;
+  const num = Number(trimmed);
+  if (!Number.isInteger(num) || num < 1 || num > 31) return null;
+  return num;
+}
+
+export function getBoostRequirementWarning(
+  guild: Guild,
+  type: EventType | undefined,
+  locale: SupportedLocale
+): string | null {
+  if (!type) return null;
+
+  if (type === 'b') {
+    const hasBanner = guild.features.includes('BANNER') || guild.premiumTier >= GuildPremiumTier.Tier2;
+    if (!hasBanner) {
+      return t(locale, 'boostWarningBanner', { tier: guild.premiumTier });
+    }
+  }
+
+  if (type === 'i') {
+    const hasSplash =
+      guild.features.includes('INVITE_SPLASH') || guild.premiumTier >= GuildPremiumTier.Tier1;
+    if (!hasSplash) {
+      return t(locale, 'boostWarningSplash', { tier: guild.premiumTier });
+    }
+  }
+
+  return null;
+}
+
+export function normalizeExternalUrl(raw?: string | null): string | null {
+  if (!raw) return null;
+  const cleaned = raw.trim().replace(/^["']|["']$/g, '').trim();
+  if (!cleaned) return null;
+  const withScheme = /^https?:\/\//i.test(cleaned) ? cleaned : `https://${cleaned}`;
+  try {
+    const parsed = new URL(withScheme);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }
 
 export function hasGuildAdminPermission(

@@ -9,6 +9,7 @@ import {
 } from 'discord.js';
 import { normalizeLocale, t } from '../i18n/index.js';
 import { botStartedAtUnix, startScheduler } from '../services/schedulerService.js';
+import { PRIMARY_COLOR } from '../types.js';
 
 function findWelcomeChannel(guild: Guild): TextChannel | null {
   const me = guild.members.me;
@@ -36,14 +37,14 @@ function findWelcomeChannel(guild: Guild): TextChannel | null {
   return null;
 }
 
-async function sendAdminNotice(client: Client, embed: EmbedBuilder): Promise<void> {
+async function sendAdminMessage(client: Client, payload: string | { embeds: EmbedBuilder[] }): Promise<void> {
   const adminChannelId = process.env.ADMIN_CHANNEL_ID?.trim();
   if (!adminChannelId) return;
 
   try {
     const channel = await client.channels.fetch(adminChannelId);
     if (!channel || !channel.isTextBased() || !('send' in channel)) return;
-    await channel.send({ embeds: [embed] });
+    await channel.send(payload);
   } catch (err) {
     console.warn('[Logoto] Failed to send admin channel notice:', err);
   }
@@ -53,17 +54,10 @@ export function registerLifecycleEvents(client: Client): void {
   client.once(Events.ClientReady, async (readyClient) => {
     console.log(`${readyClient.user.tag} is alive!`);
 
-    const startupEmbed = new EmbedBuilder()
-      .setColor(0x57f287)
-      .setTitle('Logoto — Démarrage')
-      .setDescription(`**${readyClient.user.tag}** est connecté et opérationnel.`)
-      .addFields(
-        { name: 'Serveurs', value: `${readyClient.guilds.cache.size}`, inline: true },
-        { name: 'Démarré', value: `<t:${botStartedAtUnix}:R>`, inline: true }
-      )
-      .setTimestamp();
-
-    await sendAdminNotice(readyClient, startupEmbed);
+    await sendAdminMessage(
+      readyClient,
+      `🟢 **${readyClient.user.tag}** est en ligne (${readyClient.guilds.cache.size} serveur(s)) — démarré <t:${botStartedAtUnix}:R>.`
+    );
     startScheduler(readyClient);
   });
 
@@ -75,7 +69,7 @@ export function registerLifecycleEvents(client: Client): void {
       if (!targetChannel) return;
 
       const welcomeEmbed = new EmbedBuilder()
-        .setColor(0x5865f2)
+        .setColor(PRIMARY_COLOR)
         .setTitle(t(locale, 'welcomeTitle'))
         .setDescription(t(locale, 'welcomeDesc'))
         .setTimestamp();
@@ -107,7 +101,7 @@ export function registerLifecycleEvents(client: Client): void {
         .setDescription(`Bot enlevé de **${guild.name ?? 'Inconnu'}** (\`${guild.id}\`)`)
         .setTimestamp();
 
-      await sendAdminNotice(client, embed);
+      await sendAdminMessage(client, { embeds: [embed] });
     } catch (err) {
       console.warn(`[Logoto] Error during guildDelete for ${guild.id}:`, err);
     }

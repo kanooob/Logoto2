@@ -9,6 +9,7 @@ import {
 import { buildEventChannelName, listEvents } from '../services/eventService.js';
 import { getGuildConfig, getLocalDateParts } from '../services/guildConfigService.js';
 import { processDailyEvents } from '../services/schedulerService.js';
+import { PRIMARY_COLOR } from '../types.js';
 
 async function replySafely(message: Message, content: string | { embeds: EmbedBuilder[] }): Promise<void> {
   try {
@@ -44,7 +45,7 @@ export function registerDebugCommands(client: Client): void {
 
       if (command === 'help') {
         const embed = new EmbedBuilder()
-          .setColor(0x5865f2)
+          .setColor(PRIMARY_COLOR)
           .setTitle('Logoto — Commandes Debug (!)')
           .setDescription(
             [
@@ -86,7 +87,7 @@ export function registerDebugCommands(client: Client): void {
           .map((ch) => `• \`${ch.name}\` (\`${ch.id}\`) [${ChannelType[ch.type]}]`);
 
         const embed = new EmbedBuilder()
-          .setColor(0x5865f2)
+          .setColor(PRIMARY_COLOR)
           .setTitle(`Salons de ${targetGuild.name} (${targetGuild.channels.cache.size})`)
           .setDescription(lines.join('\n').slice(0, 4000) || 'Aucun salon');
 
@@ -110,7 +111,7 @@ export function registerDebugCommands(client: Client): void {
         const canManageChannels = me?.permissions.has(PermissionsBitField.Flags.ManageChannels) ?? false;
 
         const embed = new EmbedBuilder()
-          .setColor(0x57f287)
+          .setColor(PRIMARY_COLOR)
           .setTitle(`Diagnostic Logoto — ${guild.name}`)
           .addFields(
             { name: 'log-logoto', value: config.logChannel ? `<#${config.logChannel.id}>` : 'Absent', inline: true },

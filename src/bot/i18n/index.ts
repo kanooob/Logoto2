@@ -118,6 +118,8 @@ const MESSAGES = {
     settingsBtnLanguage: "Langue",
     settingsBtnCreateEvent: "Créer un événement",
     settingsBtnManageEvent: "Modifier / Supprimer",
+    settingsBtnExport: "Exporter",
+    settingsBtnImport: "Importer",
     settingsNotConfigured: "Logoto n'est pas encore initialisé sur ce serveur (ou `log-logoto` est manquant). Lancez `/setup` ou utilisez les contrôles ci-dessous pour configurer.",
     settingsTzTitle: "Modifier le fuseau horaire",
     settingsTzDesc: "Fuseau actuel : `{tz}`\nChoisissez un fuseau IANA ci-dessous ou saisissez-le manuellement.",
@@ -127,14 +129,18 @@ const MESSAGES = {
     // Create Event
     createEventTitle: "Créer un événement programmé",
     createEventDesc:
-      "Sélectionnez le **type**, le **mois** et le **jour** de déclenchement, puis saisissez la valeur.\n\n" +
+      "Sélectionnez le **type**, le **mois** et saisissez le **jour** (1 à 31), puis indiquez la valeur.\n\n" +
       "**Type** : {type}\n" +
       "**Date** : {date}\n" +
       "**Salon cible** : `{channelName}`",
     createEventSelectType: "1. Type de modification",
     createEventSelectMonth: "2. Mois (1-12)",
-    createEventSelectDayLow: "3a. Jour (1 à 16)",
-    createEventSelectDayHigh: "3b. Jour (17 à 31)",
+    createEventDayBtn: "Choisir le jour (1-31)",
+    dayModalTitle: "Choisir le jour",
+    dayModalLabel: "Jour du mois (nombre entier de 1 à 31)",
+    invalidDay: "Jour invalide (`{day}`). Veuillez saisir un nombre entier entre **1** et **31**.",
+    boostWarningBanner: "⚠️ **Boost requis** : Ce serveur est au niveau **{tier}**. Une **bannière** nécessite le **Boost Niveau 2** pour s'appliquer, mais vous pouvez tout de même enregistrer l'événement.",
+    boostWarningSplash: "⚠️ **Boost requis** : Ce serveur est au niveau **{tier}**. Une **image d'invitation (splash)** nécessite le **Boost Niveau 1** pour s'appliquer, mais vous pouvez tout de même enregistrer l'événement.",
     createEventEnterValueBtn: "Saisir la valeur",
     createEventMissingFields: "Veuillez sélectionner un type, un mois et un jour avant de saisir la valeur.",
     eventValueModalTitle: "Valeur de l'événement ({channelName})",
@@ -145,6 +151,25 @@ const MESSAGES = {
     eventSavedTitle: "Événement enregistré",
     eventSavedCreated: "Le salon {channel} (`{channelName}`) a été créé avec la valeur :\n`{value}`",
     eventSavedUpdated: "Le salon {channel} (`{channelName}`) a été mis à jour avec la valeur :\n`{value}`",
+
+    // Export / Import
+    exportTitle: "Exportation des données Logoto",
+    exportDesc: "Voici le fichier d'export contenant `{count}` salon(s) au format `nom_du_salon:sujet_du_salon` ainsi que la date de création (`{createdAt}`).",
+    importPromptTitle: "Importer un fichier de configuration",
+    importPromptDesc:
+      "Envoyez votre fichier d'export (`.txt`) en pièce jointe dans ce salon dans les **2 prochaines minutes**.\n\n" +
+      "Format attendu : une ligne par salon au format `nom_du_salon:sujet_du_salon`.\n" +
+      "Les salons portant le même nom seront combinés en conservant le sujet issu du fichier.",
+    importNoChannel: "Impossible d'attendre un fichier dans ce salon.",
+    importTimeout: "Délai d'importation expiré (aucun fichier reçu).",
+    importCancelled: "Importation annulée.",
+    importInvalidFile: "Le fichier fourni est invalide, vide ou trop volumineux (max 512 Ko).",
+    importResultTitle: "Importation terminée",
+    importResultDesc:
+      "**Salons créés** : `{created}`\n" +
+      "**Salons combinés / mis à jour** : `{updated}`\n" +
+      "**Configuration `log-logoto` mise à jour** : `{configUpdated}`\n" +
+      "**Lignes ignorées / invalides** : `{skipped}`",
 
     // Manage Event
     manageSelectTitle: "Modifier ou supprimer un événement",
@@ -259,6 +284,8 @@ const MESSAGES = {
     settingsBtnLanguage: "Language",
     settingsBtnCreateEvent: "Create event",
     settingsBtnManageEvent: "Edit / Delete",
+    settingsBtnExport: "Export",
+    settingsBtnImport: "Import",
     settingsNotConfigured: "Logoto is not initialized on this server yet (or `log-logoto` is missing). Run `/setup` or use the controls below to configure.",
     settingsTzTitle: "Change Timezone",
     settingsTzDesc: "Current timezone: `{tz}`\nChoose an IANA timezone below or enter one manually.",
@@ -268,14 +295,18 @@ const MESSAGES = {
     // Create Event
     createEventTitle: "Create Scheduled Event",
     createEventDesc:
-      "Select the **type**, **month**, and **day**, then enter the target value.\n\n" +
+      "Select the **type**, **month**, and enter the **day** (1 to 31), then enter the target value.\n\n" +
       "**Type**: {type}\n" +
       "**Date**: {date}\n" +
       "**Target channel**: `{channelName}`",
     createEventSelectType: "1. Change type",
     createEventSelectMonth: "2. Month (1-12)",
-    createEventSelectDayLow: "3a. Day (1 to 16)",
-    createEventSelectDayHigh: "3b. Day (17 to 31)",
+    createEventDayBtn: "Choose day (1-31)",
+    dayModalTitle: "Choose Day",
+    dayModalLabel: "Day of month (integer from 1 to 31)",
+    invalidDay: "Invalid day (`{day}`). Please enter an integer between **1** and **31**.",
+    boostWarningBanner: "⚠️ **Boost required**: This server is Boost Level **{tier}**. A **banner** requires **Boost Level 2** to apply, though you can still save this event.",
+    boostWarningSplash: "⚠️ **Boost required**: This server is Boost Level **{tier}**. An **invite splash** requires **Boost Level 1** to apply, though you can still save this event.",
     createEventEnterValueBtn: "Enter value",
     createEventMissingFields: "Please select a type, month, and day before entering the value.",
     eventValueModalTitle: "Event Value ({channelName})",
@@ -286,6 +317,25 @@ const MESSAGES = {
     eventSavedTitle: "Event saved",
     eventSavedCreated: "Channel {channel} (`{channelName}`) has been created with value:\n`{value}`",
     eventSavedUpdated: "Channel {channel} (`{channelName}`) has been updated with value:\n`{value}`",
+
+    // Export / Import
+    exportTitle: "Logoto Data Export",
+    exportDesc: "Here is your export file containing `{count}` channel(s) in `channel_name:channel_topic` format with creation date (`{createdAt}`).",
+    importPromptTitle: "Import Configuration File",
+    importPromptDesc:
+      "Send your export file (`.txt`) as an attachment in this channel within the **next 2 minutes**.\n\n" +
+      "Expected format: one line per channel as `channel_name:channel_topic`.\n" +
+      "Channels with matching names will be combined while keeping the topic from the file.",
+    importNoChannel: "Unable to wait for a file in this channel.",
+    importTimeout: "Import timed out (no file received).",
+    importCancelled: "Import cancelled.",
+    importInvalidFile: "The provided file is invalid, empty, or too large (max 512 KB).",
+    importResultTitle: "Import Complete",
+    importResultDesc:
+      "**Channels created**: `{created}`\n" +
+      "**Channels combined / updated**: `{updated}`\n" +
+      "**`log-logoto` config updated**: `{configUpdated}`\n" +
+      "**Skipped / invalid lines**: `{skipped}`",
 
     // Manage Event
     manageSelectTitle: "Edit or Delete an Event",

@@ -1,6 +1,6 @@
 import { ActivityType, EmbedBuilder, type Client, type Guild } from 'discord.js';
 import { getEventTypeLabel, t } from '../i18n/index.js';
-import type { EventRecord, GuildConfig } from '../types.js';
+import { PRIMARY_COLOR, type EventRecord, type GuildConfig } from '../types.js';
 import { isSafeImageUrl, isValidServerName } from '../utils/validators.js';
 import { buildEventChannelName, listEvents } from './eventService.js';
 import { getGuildConfig, getLocalDateParts, sendLogEmbed } from './guildConfigService.js';
@@ -56,29 +56,21 @@ export function updateBotPresence(client: Client): void {
 }
 
 export async function reportAdminHealth(client: Client): Promise<void> {
-  const adminChannelId = process.env.ADMIN_CHANNEL_ID?.trim();
-  if (!adminChannelId) return;
+  const pingChannelId = process.env.PING_CHANNEL_ID?.trim();
+  if (!pingChannelId) return;
 
   try {
-    const channel = await client.channels.fetch(adminChannelId);
+    const channel = await client.channels.fetch(pingChannelId);
     if (!channel || !channel.isTextBased() || !('send' in channel)) return;
 
-    const ping = Math.round(client.ws.ping);
+    const ping = Math.max(0, Math.round(client.ws.ping));
     const guildCount = client.guilds.cache.size;
 
-    const embed = new EmbedBuilder()
-      .setColor(0x5865f2)
-      .setTitle('Logoto — Heartbeat')
-      .addFields(
-        { name: 'Ping', value: `${ping} ms`, inline: true },
-        { name: 'Serveurs', value: `${guildCount}`, inline: true },
-        { name: 'Démarré', value: `<t:${botStartedAtUnix}:R>`, inline: true }
-      )
-      .setTimestamp();
-
-    await channel.send({ embeds: [embed] });
+    await channel.send(
+      `🏓 Ping : ${ping} ms | Serveurs : ${guildCount} | Démarré : <t:${botStartedAtUnix}:R>`
+    );
   } catch (err) {
-    console.warn('[Logoto] Could not send heartbeat to ADMIN_CHANNEL_ID:', err);
+    console.warn('[Logoto] Could not send ping message to PING_CHANNEL_ID:', err);
   }
 }
 
@@ -93,7 +85,7 @@ async function applyEventToGuild(
   const value = event.value.trim();
 
   const triggerEmbed = new EmbedBuilder()
-    .setColor(0xfee75c)
+    .setColor(PRIMARY_COLOR)
     .setTitle(t(config.locale, 'logTriggerTitle', { channelName }))
     .setDescription(
       t(config.locale, 'logTriggerDesc', {
@@ -247,4 +239,11 @@ export function startScheduler(client: Client): void {
   intervalHandle = setInterval(() => {
     void runScheduledCycle(client);
   }, SCHEDULER_INTERVAL_MS);
+}
+
+export function stopScheduler(): void {
+  if (intervalHandle) {
+    clearInterval(intervalHandle);
+    intervalHandle = null;
+  }
 }

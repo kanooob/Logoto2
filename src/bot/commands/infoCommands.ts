@@ -1,14 +1,18 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   EmbedBuilder,
   MessageFlags,
   OAuth2Scopes,
   PermissionsBitField,
   type ChatInputCommandInteraction,
 } from 'discord.js';
-import { normalizeLocale, t } from '../i18n/index.js';
+import { normalizeLocale, t, type TranslationKey } from '../i18n/index.js';
 import { getGuildConfig } from '../services/guildConfigService.js';
 import { botStartedAtUnix } from '../services/schedulerService.js';
-import type { SupportedLocale } from '../types.js';
+import { PRIMARY_COLOR, type SupportedLocale } from '../types.js';
+import { normalizeExternalUrl } from '../utils/validators.js';
 
 async function resolveLocale(interaction: ChatInputCommandInteraction): Promise<SupportedLocale> {
   if (interaction.guild) {
@@ -25,7 +29,7 @@ export async function handlePingCommand(interaction: ChatInputCommandInteraction
   const ping = Math.max(0, Math.round(interaction.client.ws.ping));
 
   const embed = new EmbedBuilder()
-    .setColor(0x57f287)
+    .setColor(PRIMARY_COLOR)
     .setTitle(t(locale, 'pingTitle'))
     .setDescription(t(locale, 'pingDesc', { ping }))
     .setTimestamp();
@@ -37,7 +41,7 @@ export async function handleHelpCommand(interaction: ChatInputCommandInteraction
   const locale = await resolveLocale(interaction);
 
   const embed = new EmbedBuilder()
-    .setColor(0x5865f2)
+    .setColor(PRIMARY_COLOR)
     .setTitle(t(locale, 'helpTitle'))
     .setDescription(t(locale, 'helpDesc'))
     .addFields(
@@ -54,8 +58,10 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
   const locale = await resolveLocale(interaction);
   const clientId = process.env.CLIENT_ID?.trim() || interaction.client.user?.id || '';
 
-  const inviteUrl = clientId
-    ? interaction.client.generateInvite({
+  let inviteUrl = '';
+  try {
+    if (interaction.client.user) {
+      inviteUrl = interaction.client.generateInvite({
         scopes: [OAuth2Scopes.Bot, OAuth2Scopes.ApplicationsCommands],
         permissions: [
           PermissionsBitField.Flags.ManageGuild,
@@ -64,30 +70,61 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
           PermissionsBitField.Flags.SendMessages,
           PermissionsBitField.Flags.EmbedLinks,
         ],
-      })
-    : '';
-
-  const linkLines: string[] = [];
-  if (inviteUrl) {
-    linkLines.push(`• [${t(locale, 'aboutInviteLabel')}](${inviteUrl})`);
+      });
+    }
+  } catch {
+    inviteUrl = '';
   }
 
-  const optionalLinks: Array<[string | undefined, 'aboutWebsiteLabel' | 'aboutSupportLabel' | 'aboutTermsLabel' | 'aboutPrivacyLabel']> = [
-    [process.env.WEBSITE_URL, 'aboutWebsiteLabel'],
-    [process.env.SUPPORT_INVITE_URL, 'aboutSupportLabel'],
-    [process.env.TERMS_URL, 'aboutTermsLabel'],
-    [process.env.PRIVACY_URL, 'aboutPrivacyLabel'],
+  if (!inviteUrl && clientId) {
+    const perms = (
+      PermissionsBitField.Flags.ManageGuild |
+      PermissionsBitField.Flags.ManageChannels |
+      PermissionsBitField.Flags.ViewChannel |
+      PermissionsBitField.Flags.SendMessages |
+      PermissionsBitField.Flags.EmbedLinks
+    ).toString();
+    inviteUrl = `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(clientId)}&permissions=${perms}&scope=bot%20applications.commands`;
+  }
+
+  const linkItems: Array<{ label: string; url: string }> = [];
+  if (inviteUrl) {
+    linkItems.push({ label: t(locale, 'aboutInviteLabel'), url: inviteUrl });
+  }
+
+  const envLinks: Array<{ candidates: Array<string | undefined>; labelKey: TranslationKey }> = [
+    {
+      candidates: [process.env.WEBSITE_URL, process.env.SITE_URL],
+      labelKey: 'aboutWebsiteLabel',
+    },
+    {
+      candidates: [
+        process.env.SUPPORT_INVITE_URL,
+        process.env.SUPPORT_URL,
+        process.env.SUPPORT_SERVER_URL,
+      ],
+      labelKey: 'aboutSupportLabel',
+    },
+    {
+      candidates: [process.env.TERMS_URL, process.env.TOS_URL, process.env.CGU_URL],
+      labelKey: 'aboutTermsLabel',
+    },
+    {
+      candidates: [process.env.PRIVACY_URL, process.env.CONFIDENTIALITE_URL],
+      labelKey: 'aboutPrivacyLabel',
+    },
   ];
 
-  for (const [rawUrl, labelKey] of optionalLinks) {
-    const clean = rawUrl?.trim();
-    if (clean && (clean.startsWith('https://') || clean.startsWith('http://'))) {
-      linkLines.push(`• [${t(locale, labelKey)}](${clean})`);
+  for (const item of envLinks) {
+    const raw = item.candidates.find((v) => v && v.trim().length > 0);
+    const normalized = normalizeExternalUrl(raw);
+    if (normalized) {
+      linkItems.push({ label: t(locale, item.labelKey), url: normalized });
     }
   }
 
   const embed = new EmbedBuilder()
-    .setColor(0x5865f2)
+    .setColor(PRIMARY_COLOR)
     .setTitle(t(locale, 'aboutTitle'))
     .setDescription(t(locale, 'aboutDesc'))
     .addFields({
@@ -96,10 +133,10 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
       inline: true,
     });
 
-  if (linkLines.length > 0) {
+  if (linkItems.length > 0) {
     embed.addFields({
       name: t(locale, 'aboutLinksField'),
-      value: linkLines.join('\n'),
+      value: linkItems.map((l) => `• [${l.label}](${l.url})`).join('\n'),
     });
   }
 
@@ -107,5 +144,18 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
     embed.setThumbnail(interaction.client.user.displayAvatarURL());
   }
 
-  await interaction.reply({ embeds: [embed] });
+  const components: ActionRowBuilder<ButtonBuilder>[] = [];
+  if (linkItems.length > 0) {
+    const linkRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      linkItems.slice(0, 5).map((item) =>
+        new ButtonBuilder()
+          .setLabel(item.label)
+          .setURL(item.url)
+          .setStyle(ButtonStyle.Link)
+      )
+    );
+    components.push(linkRow);
+  }
+
+  await interaction.reply({ embeds: [embed], components });
 }
