@@ -9,6 +9,9 @@ export const COMMON_TIMEZONES: readonly string[] = [
   'America/Toronto',
   'America/Los_Angeles',
   'UTC',
+  'UTC+1',
+  'UTC+2',
+  'UTC-5',
 ] as const;
 
 export function normalizeLocale(input?: string | null): SupportedLocale {
@@ -90,14 +93,15 @@ const MESSAGES = {
     setupStep1Desc: "Choisissez la langue utilisée par Logoto pour les messages, embeds et journaux sur ce serveur.",
     setupLangPlaceholder: "Sélectionnez une langue",
     setupStep2Title: "Configuration de Logoto — Étape 2/2 : Fuseau horaire",
-    setupStep2Desc: "Langue sélectionnée : **{lang}**.\nSélectionnez un fuseau horaire IANA courant ci-dessous ou saisissez-en un manuellement.",
-    setupTzPlaceholder: "Choisissez un fuseau horaire IANA",
-    setupCustomTzBtn: "Saisir un fuseau IANA",
-    setupTzModalTitle: "Fuseau horaire IANA personnalisé",
-    setupTzModalLabel: "Fuseau horaire IANA (ex. Europe/Brussels)",
-    invalidTimezone: "Le fuseau horaire `{tz}` est invalide. Utilisez un identifiant IANA valide (ex. `Europe/Paris`, `America/Montreal`, `Asia/Tokyo`, `UTC`).",
+    setupStep2Desc: "Langue sélectionnée : **{lang}**.\nSélectionnez un fuseau horaire courant ci-dessous ou saisissez un fuseau **IANA** ou **UTC+/-** manuellement (ex. `Europe/Paris`, `UTC+1`, `UTC-5`, `+2`).",
+    setupTzPlaceholder: "Choisissez un fuseau horaire (IANA ou UTC±)",
+    setupCustomTzBtn: "Saisir un fuseau / UTC±",
+    setupTzModalTitle: "Fuseau horaire personnalisé",
+    setupTzModalLabel: "Fuseau IANA ou UTC± (ex. Europe/Paris, UTC+1)",
+    invalidTimezone: "Le fuseau horaire `{tz}` est invalide. Utilisez un identifiant IANA valide (`Europe/Paris`, `America/Montreal`, `UTC`) ou un décalage `UTC±` (`UTC+1`, `UTC-5`, `+2`, `+5:30`).",
     setupCompleteTitle: "Logoto configuré avec succès",
-    setupCompleteDesc: "La structure de configuration est prête.\n\n**Langue** : `{lang}`\n**Fuseau horaire** : `{tz}`\n**Heure locale actuelle** : `{localTime}`\n**Salon de configuration** : {channel}\n\nUtilisez `/settings` pour ajouter et gérer vos événements programmés.",
+    setupCompleteDesc: "La structure de configuration est prête.\n\n**Langue** : `{lang}`\n**Fuseau horaire** : `{tz}`\n**Heure locale actuelle** : `{localTime}`\n**Salon de configuration** : {channel}{announcementNote}\n\nUtilisez `/settings` pour ajouter et gérer vos événements programmés.",
+    setupAnnouncementFollowed: "\n**Annonces** : Salon des annonces suivi dans {channel}",
     pinnedSummaryTitle: "Configuration Logoto initialisée",
     pinnedSummaryDesc:
       "Ce salon stocke la configuration de Logoto dans son sujet (`tz=...;lang=...`) et reçoit les journaux d'exécution.\n\n" +
@@ -122,7 +126,7 @@ const MESSAGES = {
     settingsBtnImport: "Importer",
     settingsNotConfigured: "Logoto n'est pas encore initialisé sur ce serveur (ou `log-logoto` est manquant). Lancez `/setup` ou utilisez les contrôles ci-dessous pour configurer.",
     settingsTzTitle: "Modifier le fuseau horaire",
-    settingsTzDesc: "Fuseau actuel : `{tz}`\nChoisissez un fuseau IANA ci-dessous ou saisissez-le manuellement.",
+    settingsTzDesc: "Fuseau actuel : `{tz}`\nChoisissez un fuseau ci-dessous ou saisissez un identifiant **IANA** ou **UTC±** (ex. `UTC+1`, `-5`, `Europe/Paris`).",
     settingsLangTitle: "Modifier la langue",
     settingsLangDesc: "Langue actuelle : `{lang}`\nChoisissez la nouvelle langue du serveur.",
 
@@ -218,8 +222,8 @@ const MESSAGES = {
       "• `b` — **Bannière** du serveur (`https://...`, nécessite le niveau de boost requis)\n" +
       "• `i` — **Image d'invitation / Splash** (`https://...`, nécessite le niveau de boost requis)\n\n" +
       "Exemple : `l-25-12` applique un nouveau logo le 25 décembre.",
-    helpTzTitle: "Fuseaux horaires IANA",
-    helpTzValue: "Exemples valides : `Europe/Paris`, `Europe/Brussels`, `America/Toronto`, `America/New_York`, `Asia/Tokyo`, `UTC`.",
+    helpTzTitle: "Fuseaux horaires (IANA et UTC±)",
+    helpTzValue: "Exemples valides : `Europe/Paris`, `Europe/Brussels`, `America/Toronto`, `UTC`, `UTC+1`, `UTC-5`, `+2`, `+5:30`.",
     aboutTitle: "À propos de Logoto",
     aboutDesc: "Logoto modifie automatiquement le logo, le nom, la bannière et l'image d'invitation de votre serveur selon un calendrier stocké directement dans vos salons Discord.",
     aboutUptimeField: "Démarré",
@@ -256,14 +260,15 @@ const MESSAGES = {
     setupStep1Desc: "Choose the language Logoto will use for messages, embeds, and logs on this server.",
     setupLangPlaceholder: "Select a language",
     setupStep2Title: "Logoto Setup — Step 2/2: Timezone",
-    setupStep2Desc: "Selected language: **{lang}**.\nSelect a common IANA timezone below or enter one manually.",
-    setupTzPlaceholder: "Choose an IANA timezone",
-    setupCustomTzBtn: "Enter custom IANA timezone",
-    setupTzModalTitle: "Custom IANA Timezone",
-    setupTzModalLabel: "IANA timezone (e.g. Europe/Brussels)",
-    invalidTimezone: "Timezone `{tz}` is invalid. Please provide a valid IANA identifier (e.g. `Europe/Paris`, `America/New_York`, `Asia/Tokyo`, `UTC`).",
+    setupStep2Desc: "Selected language: **{lang}**.\nSelect a common timezone below or enter a custom **IANA** or **UTC+/-** offset manually (e.g. `Europe/Paris`, `UTC+1`, `UTC-5`, `+2`).",
+    setupTzPlaceholder: "Choose a timezone (IANA or UTC±)",
+    setupCustomTzBtn: "Enter custom timezone / UTC±",
+    setupTzModalTitle: "Custom Timezone",
+    setupTzModalLabel: "IANA or UTC± (e.g. Europe/Paris, UTC+1)",
+    invalidTimezone: "Timezone `{tz}` is invalid. Please provide a valid IANA identifier (`Europe/Paris`, `America/New_York`, `UTC`) or a `UTC±` offset (`UTC+1`, `UTC-5`, `+2`, `+5:30`).",
     setupCompleteTitle: "Logoto configured successfully",
-    setupCompleteDesc: "The configuration structure is ready.\n\n**Language**: `{lang}`\n**Timezone**: `{tz}`\n**Current local time**: `{localTime}`\n**Configuration channel**: {channel}\n\nUse `/settings` to add and manage scheduled events.",
+    setupCompleteDesc: "The configuration structure is ready.\n\n**Language**: `{lang}`\n**Timezone**: `{tz}`\n**Current local time**: `{localTime}`\n**Configuration channel**: {channel}{announcementNote}\n\nUse `/settings` to add and manage scheduled events.",
+    setupAnnouncementFollowed: "\n**Announcements**: Following announcements in {channel}",
     pinnedSummaryTitle: "Logoto Configuration Initialized",
     pinnedSummaryDesc:
       "This channel stores Logoto's configuration in its topic (`tz=...;lang=...`) and receives execution logs.\n\n" +
@@ -288,7 +293,7 @@ const MESSAGES = {
     settingsBtnImport: "Import",
     settingsNotConfigured: "Logoto is not initialized on this server yet (or `log-logoto` is missing). Run `/setup` or use the controls below to configure.",
     settingsTzTitle: "Change Timezone",
-    settingsTzDesc: "Current timezone: `{tz}`\nChoose an IANA timezone below or enter one manually.",
+    settingsTzDesc: "Current timezone: `{tz}`\nChoose a timezone below or enter a custom **IANA** or **UTC±** offset (e.g. `UTC+1`, `-5`, `Europe/Paris`).",
     settingsLangTitle: "Change Language",
     settingsLangDesc: "Current language: `{lang}`\nSelect the new server language.",
 
@@ -384,8 +389,8 @@ const MESSAGES = {
       "• `b` — Server **Banner** (`https://...`, requires boost tier)\n" +
       "• `i` — **Invite Splash** (`https://...`, requires boost tier)\n\n" +
       "Example: `l-25-12` updates the server icon on December 25.",
-    helpTzTitle: "IANA Timezones",
-    helpTzValue: "Valid examples: `Europe/Paris`, `Europe/London`, `America/New_York`, `America/Toronto`, `Asia/Tokyo`, `UTC`.",
+    helpTzTitle: "Timezones (IANA & UTC±)",
+    helpTzValue: "Valid examples: `Europe/Paris`, `Europe/London`, `America/New_York`, `UTC`, `UTC+1`, `UTC-5`, `+2`, `+5:30`.",
     aboutTitle: "About Logoto",
     aboutDesc: "Logoto automatically updates your server's icon, name, banner, and invite splash according to a schedule stored directly in Discord channels.",
     aboutUptimeField: "Started",

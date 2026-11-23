@@ -6,6 +6,7 @@ import {
   type PermissionsBitField as PermissionsType,
 } from 'discord.js';
 import { t } from '../i18n/index.js';
+import { normalizeTimeZone, parseUtcOffsetMinutes } from '../services/guildConfigService.js';
 import type { EventType, SupportedLocale } from '../types.js';
 
 const PRIVATE_IPV4_REGEX = /^(127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[0-1])\.)/;
@@ -116,9 +117,25 @@ export function formatLocalDateTimeDisplay(
   date: Date = new Date()
 ): string {
   const intlLocale = locale === 'fr' ? 'fr-FR' : 'en-GB';
+  const normalized = normalizeTimeZone(timezone) ?? 'UTC';
+  const offsetMinutes = parseUtcOffsetMinutes(normalized);
+
+  if (offsetMinutes !== null) {
+    const shifted = new Date(date.getTime() + offsetMinutes * 60_000);
+    return new Intl.DateTimeFormat(intlLocale, {
+      timeZone: 'UTC',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(shifted);
+  }
+
   try {
     return new Intl.DateTimeFormat(intlLocale, {
-      timeZone: timezone,
+      timeZone: normalized,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',

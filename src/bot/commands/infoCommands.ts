@@ -66,6 +66,7 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
         permissions: [
           PermissionsBitField.Flags.ManageGuild,
           PermissionsBitField.Flags.ManageChannels,
+          PermissionsBitField.Flags.ManageWebhooks,
           PermissionsBitField.Flags.ViewChannel,
           PermissionsBitField.Flags.SendMessages,
           PermissionsBitField.Flags.EmbedLinks,
@@ -80,6 +81,7 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
     const perms = (
       PermissionsBitField.Flags.ManageGuild |
       PermissionsBitField.Flags.ManageChannels |
+      PermissionsBitField.Flags.ManageWebhooks |
       PermissionsBitField.Flags.ViewChannel |
       PermissionsBitField.Flags.SendMessages |
       PermissionsBitField.Flags.EmbedLinks
@@ -132,13 +134,6 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
       value: `<t:${botStartedAtUnix}:R>`,
       inline: true,
     });
-
-  if (linkItems.length > 0) {
-    embed.addFields({
-      name: t(locale, 'aboutLinksField'),
-      value: linkItems.map((l) => `• [${l.label}](${l.url})`).join('\n'),
-    });
-  }
 
   if (interaction.client.user?.displayAvatarURL()) {
     embed.setThumbnail(interaction.client.user.displayAvatarURL());

@@ -40,6 +40,7 @@ import {
   formatConfigTopic,
   getGuildConfig,
   isValidTimeZone,
+  normalizeTimeZone,
   parseConfigFromTopic,
   setGuildConfig,
 } from '../services/guildConfigService.js';
@@ -128,6 +129,7 @@ async function buildMainSettingsPayload(guild: Guild, fallbackLocale?: Supported
 }
 
 function buildTimezonePayload(locale: SupportedLocale, currentTz: string) {
+  const normalizedCurrent = normalizeTimeZone(currentTz) ?? currentTz;
   const embed = new EmbedBuilder()
     .setColor(PRIMARY_COLOR)
     .setTitle(t(locale, 'settingsTzTitle'))
@@ -137,11 +139,14 @@ function buildTimezonePayload(locale: SupportedLocale, currentTz: string) {
     .setCustomId('settings:tz_select')
     .setPlaceholder(t(locale, 'setupTzPlaceholder'))
     .addOptions(
-      COMMON_TIMEZONES.map((tz) => ({
-        label: tz,
-        value: tz,
-        default: tz === currentTz,
-      }))
+      COMMON_TIMEZONES.map((tz) => {
+        const value = normalizeTimeZone(tz) ?? tz;
+        return {
+          label: tz,
+          value,
+          default: value === normalizedCurrent,
+        };
+      })
     );
 
   const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -591,7 +596,7 @@ export async function handleSettingsInteraction(
         .setCustomId('timezone_input')
         .setLabel(t(locale, 'setupTzModalLabel'))
         .setStyle(TextInputStyle.Short)
-        .setPlaceholder('Europe/Paris')
+        .setPlaceholder('Europe/Paris / UTC+1')
         .setValue(config.timezone)
         .setRequired(true)
         .setMaxLength(64);

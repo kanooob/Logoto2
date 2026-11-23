@@ -9,11 +9,14 @@ import {
   StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
+  WebhookType,
   type ButtonInteraction,
   type ChatInputCommandInteraction,
   type Guild,
   type ModalSubmitInteraction,
+  type NewsChannel,
   type StringSelectMenuInteraction,
+  type TextChannel,
 } from 'discord.js';
 import { COMMON_TIMEZONES, normalizeLocale, t } from '../i18n/index.js';
 import { getSetupSession, setSetupSession, clearSetupSession } from '../interactions/sessionStore.js';
@@ -22,6 +25,7 @@ import {
   formatConfigTopic,
   getGuildConfig,
   isValidTimeZone,
+  normalizeTimeZone,
   setGuildConfig,
 } from '../services/guildConfigService.js';
 import { PRIMARY_COLOR, type SupportedLocale } from '../types.js';
@@ -57,7 +61,7 @@ function buildTimezoneStepPayload(locale: SupportedLocale) {
     .addOptions(
       COMMON_TIMEZONES.map((tz) => ({
         label: tz,
-        value: tz,
+        value: normalizeTimeZone(tz) ?? tz,
       }))
     );
 
@@ -71,9 +75,68 @@ function buildTimezoneStepPayload(locale: SupportedLocale) {
   return { embeds: [embed], components: [row1, row2] };
 }
 
+async function resolveAnnouncementChannel(guild: Guild): Promise<NewsChannel | null> {
+  const explicitChannelId =
+    process.env.SUPPORT_ANNOUNCEMENT_CHANNEL_ID?.trim() ||
+    process.env.ANNOUNCEMENT_CHANNEL_ID?.trim() ||
+    process.env.ANNOUNCEMENTS_CHANNEL_ID?.trim();
+
+  if (explicitChannelId) {
+    const fetched = await guild.client.channels.fetch(explicitChannelId);
+    if (fetched && fetched.type === ChannelType.GuildAnnouncement) {
+      return fetched;
+    }
+    return null;
+  }
+
+  const supportGuildId = process.env.SUPPORT_GUILD_ID?.trim();
+  if (supportGuildId) {
+    const supportGuild =
+      guild.client.guilds.cache.get(supportGuildId) ??
+      (await guild.client.guilds.fetch(supportGuildId).catch(() => null));
+    if (supportGuild) {
+      await supportGuild.channels.fetch().catch(() => null);
+      const announcement = supportGuild.channels.cache.find(
+        (ch): ch is NewsChannel => ch.type === ChannelType.GuildAnnouncement
+      );
+      if (announcement) return announcement;
+    }
+  }
+
+  return null;
+}
+
+async function followAnnouncementsInLogChannel(
+  guild: Guild,
+  logChannel: TextChannel
+): Promise<boolean> {
+  try {
+    const announcementChannel = await resolveAnnouncementChannel(guild);
+    if (!announcementChannel) return false;
+
+    const existingWebhooks = await logChannel.fetchWebhooks().catch(() => null);
+    const alreadyFollowing = existingWebhooks?.some(
+      (wh) =>
+        wh.type === WebhookType.ChannelFollower &&
+        wh.sourceChannel?.id === announcementChannel.id
+    );
+
+    if (alreadyFollowing) {
+      return true;
+    }
+
+    await announcementChannel.addFollower(logChannel.id, 'Logoto setup announcement subscription');
+    return true;
+  } catch (err) {
+    console.warn(`[Logoto] Failed to follow support announcement channel for guild ${guild.id}:`, err);
+    return false;
+  }
+}
+
 async function finalizeSetup(guild: Guild, locale: SupportedLocale, timezone: string) {
+  const normalizedTz = normalizeTimeZone(timezone) ?? timezone;
   const { logChannel } = await ensureLogChannel(guild);
-  const updated = await setGuildConfig(guild, { timezone, locale });
+  const updated = await setGuildConfig(guild, { timezone: normalizedTz, locale });
 
   const topic = formatConfigTopic(updated.timezone, updated.locale);
   const summaryEmbed = new EmbedBuilder()
@@ -90,17 +153,10 @@ async function finalizeSetup(guild: Guild, locale: SupportedLocale, timezone: st
     console.warn(`[Logoto] Could not send/pin summary embed in ${guild.id}:`, err);
   }
 
-  const announcementChannelId = process.env.SUPPORT_ANNOUNCEMENT_CHANNEL_ID?.trim();
-  if (announcementChannelId) {
-    try {
-      const announcementChannel = await guild.client.channels.fetch(announcementChannelId);
-      if (announcementChannel && announcementChannel.type === ChannelType.GuildAnnouncement) {
-        await announcementChannel.addFollower(logChannel.id, 'Logoto setup announcement subscription');
-      }
-    } catch (err) {
-      console.warn(`[Logoto] Failed to follow support announcement channel for guild ${guild.id}:`, err);
-    }
-  }
+  const followed = await followAnnouncementsInLogChannel(guild, logChannel);
+  const announcementNote = followed
+    ? t(updated.locale, 'setupAnnouncementFollowed', { channel: `<#${logChannel.id}>` })
+    : '';
 
   const localTime = formatLocalDateTimeDisplay(updated.timezone, updated.locale);
   const confirmEmbed = new EmbedBuilder()
@@ -112,6 +168,7 @@ async function finalizeSetup(guild: Guild, locale: SupportedLocale, timezone: st
         tz: updated.timezone,
         localTime,
         channel: `<#${logChannel.id}>`,
+        announcementNote,
       })
     )
     .setTimestamp();
@@ -174,7 +231,7 @@ export async function handleSetupInteraction(
       .setCustomId('timezone_input')
       .setLabel(t(locale, 'setupTzModalLabel'))
       .setStyle(TextInputStyle.Short)
-      .setPlaceholder('Europe/Paris')
+      .setPlaceholder('Europe/Paris / UTC+1')
       .setRequired(true)
       .setMaxLength(64);
 

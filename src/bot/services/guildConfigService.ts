@@ -14,20 +14,61 @@ export const LOG_CHANNEL_NAME = 'log-logoto';
 export const DEFAULT_TIMEZONE = 'UTC';
 export const DEFAULT_LOCALE: SupportedLocale = 'en';
 
-export function isValidTimeZone(tz: string): boolean {
-  if (!tz || typeof tz !== 'string') return false;
+const UTC_OFFSET_REGEX = /^(?:(?:utc|gmt)\s*)?([+-])\s*(\d{1,2})(?::(\d{2}))?$/i;
+
+export function parseUtcOffsetMinutes(tz: string): number | null {
+  if (!tz || typeof tz !== 'string') return null;
   const trimmed = tz.trim();
-  if (!trimmed) return false;
+  if (!trimmed) return null;
+
+  const match = UTC_OFFSET_REGEX.exec(trimmed);
+  if (!match) return null;
+
+  const sign = match[1];
+  const hours = Number(match[2]);
+  const minutes = match[3] ? Number(match[3]) : 0;
+
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+  if (hours < 0 || hours > 14 || minutes < 0 || minutes > 59) return null;
+
+  const totalMinutes = hours * 60 + minutes;
+  if (totalMinutes > 14 * 60) return null;
+  if (totalMinutes === 0) return 0;
+
+  return sign === '-' ? -totalMinutes : totalMinutes;
+}
+
+export function normalizeTimeZone(tz: string): string | null {
+  if (!tz || typeof tz !== 'string') return null;
+  const trimmed = tz.trim();
+  if (!trimmed) return null;
+
+  const offsetMinutes = parseUtcOffsetMinutes(trimmed);
+  if (offsetMinutes !== null) {
+    if (offsetMinutes === 0) return 'UTC';
+    const sign = offsetMinutes > 0 ? '+' : '-';
+    const abs = Math.abs(offsetMinutes);
+    const hours = Math.floor(abs / 60);
+    const minutes = abs % 60;
+    return minutes === 0
+      ? `${sign}${hours}`
+      : `${sign}${hours}:${String(minutes).padStart(2, '0')}`;
+  }
+
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: trimmed });
-    return true;
+    return trimmed;
   } catch {
-    return false;
+    return null;
   }
 }
 
+export function isValidTimeZone(tz: string): boolean {
+  return normalizeTimeZone(tz) !== null;
+}
+
 export function formatConfigTopic(timezone: string, locale: string): string {
-  const safeTz = isValidTimeZone(timezone) ? timezone.trim() : DEFAULT_TIMEZONE;
+  const safeTz = normalizeTimeZone(timezone) ?? DEFAULT_TIMEZONE;
   const safeLocale = normalizeLocale(locale);
   return `tz=${safeTz};lang=${safeLocale}`;
 }
@@ -50,8 +91,11 @@ export function parseConfigFromTopic(topic?: string | null): {
     const key = segment.slice(0, eqIndex).trim().toLowerCase();
     const val = segment.slice(eqIndex + 1).trim();
 
-    if (key === 'tz' && isValidTimeZone(val)) {
-      timezone = val;
+    if (key === 'tz') {
+      const normalizedTz = normalizeTimeZone(val);
+      if (normalizedTz) {
+        timezone = normalizedTz;
+      }
     } else if (key === 'lang') {
       locale = normalizeLocale(val);
     }
@@ -98,14 +142,18 @@ function buildPrivateOverwrites(guild: Guild) {
   ];
 
   if (botId) {
+    const allow = [
+      PermissionsBitField.Flags.ViewChannel,
+      PermissionsBitField.Flags.SendMessages,
+      PermissionsBitField.Flags.ManageChannels,
+      PermissionsBitField.Flags.EmbedLinks,
+    ];
+    if (guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)) {
+      allow.push(PermissionsBitField.Flags.ManageWebhooks);
+    }
     overwrites.push({
       id: botId,
-      allow: [
-        PermissionsBitField.Flags.ViewChannel,
-        PermissionsBitField.Flags.SendMessages,
-        PermissionsBitField.Flags.ManageChannels,
-        PermissionsBitField.Flags.EmbedLinks,
-      ],
+      allow,
     } as never);
   }
 
@@ -180,9 +228,7 @@ export async function setGuildConfig(
 
   const nextTimezone =
     updates.timezone !== undefined
-      ? isValidTimeZone(updates.timezone)
-        ? updates.timezone.trim()
-        : DEFAULT_TIMEZONE
+      ? normalizeTimeZone(updates.timezone) ?? DEFAULT_TIMEZONE
       : current.timezone;
 
   const nextLocale =
@@ -206,7 +252,28 @@ export async function setGuildConfig(
 }
 
 export function getLocalDateParts(timezone: string, date: Date = new Date()): LocalDateParts {
-  const safeTz = isValidTimeZone(timezone) ? timezone.trim() : DEFAULT_TIMEZONE;
+  const safeTz = normalizeTimeZone(timezone) ?? DEFAULT_TIMEZONE;
+  const offsetMinutes = parseUtcOffsetMinutes(safeTz);
+
+  if (offsetMinutes !== null) {
+    const shifted = new Date(date.getTime() + offsetMinutes * 60_000);
+    const year = shifted.getUTCFullYear();
+    const month = shifted.getUTCMonth() + 1;
+    const day = shifted.getUTCDate();
+    const hour = shifted.getUTCHours();
+    const minute = shifted.getUTCMinutes();
+    const dateKey = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+    return {
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      dateKey,
+    };
+  }
+
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: safeTz,
     year: 'numeric',

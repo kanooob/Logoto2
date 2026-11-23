@@ -8,7 +8,11 @@ import {
   type TextChannel,
 } from 'discord.js';
 import { normalizeLocale, t } from '../i18n/index.js';
-import { botStartedAtUnix, startScheduler } from '../services/schedulerService.js';
+import {
+  botStartedAtUnix,
+  startScheduler,
+  updateBotPresence,
+} from '../services/schedulerService.js';
 import { PRIMARY_COLOR } from '../types.js';
 
 function findWelcomeChannel(guild: Guild): TextChannel | null {
@@ -37,17 +41,33 @@ function findWelcomeChannel(guild: Guild): TextChannel | null {
   return null;
 }
 
-async function sendAdminMessage(client: Client, payload: string | { embeds: EmbedBuilder[] }): Promise<void> {
-  const adminChannelId = process.env.ADMIN_CHANNEL_ID?.trim();
-  if (!adminChannelId) return;
+async function sendChannelNotice(
+  client: Client,
+  channelId: string | undefined,
+  payload: string | { embeds: EmbedBuilder[] }
+): Promise<void> {
+  const targetId = channelId?.trim();
+  if (!targetId) return;
 
   try {
-    const channel = await client.channels.fetch(adminChannelId);
+    const channel = await client.channels.fetch(targetId);
     if (!channel || !channel.isTextBased() || !('send' in channel)) return;
     await channel.send(payload);
   } catch (err) {
-    console.warn('[Logoto] Failed to send admin channel notice:', err);
+    console.warn(`[Logoto] Failed to send notice to channel ${targetId}:`, err);
   }
+}
+
+async function sendAdminMessage(client: Client, payload: string | { embeds: EmbedBuilder[] }): Promise<void> {
+  await sendChannelNotice(client, process.env.ADMIN_CHANNEL_ID, payload);
+}
+
+async function sendGuildLogMessage(client: Client, payload: { embeds: EmbedBuilder[] }): Promise<void> {
+  const guildLogChannelId =
+    process.env.GUILD_LOG_CHANNEL_ID?.trim() ||
+    process.env.SERVERS_CHANNEL_ID?.trim() ||
+    process.env.ADMIN_CHANNEL_ID?.trim();
+  await sendChannelNotice(client, guildLogChannelId, payload);
 }
 
 export function registerLifecycleEvents(client: Client): void {
@@ -62,6 +82,47 @@ export function registerLifecycleEvents(client: Client): void {
   });
 
   client.on(Events.GuildCreate, async (guild) => {
+    updateBotPresence(guild.client);
+
+    let ownerDisplay = guild.ownerId ? `<@${guild.ownerId}> (\`${guild.ownerId}\`)` : 'Inconnu';
+    try {
+      const owner = await guild.fetchOwner();
+      ownerDisplay = `${owner.user.tag} (<@${owner.id}> • \`${owner.id}\`)`;
+    } catch {
+      // Keep fallback ownerDisplay
+    }
+
+    try {
+      const createdUnix = Math.floor(guild.createdTimestamp / 1000);
+      const joinEmbed = new EmbedBuilder()
+        .setColor(0x57f287)
+        .setTitle(`🟢 Bot ajouté sur un serveur — ${guild.name}`)
+        .addFields(
+          { name: 'Nom', value: guild.name || 'Inconnu', inline: true },
+          { name: 'ID', value: `\`${guild.id}\``, inline: true },
+          { name: 'Propriétaire', value: ownerDisplay, inline: false },
+          { name: 'Membres', value: `${guild.memberCount ?? 'Inconnu'}`, inline: true },
+          {
+            name: 'Boosts',
+            value: `Niveau ${guild.premiumTier} (${guild.premiumSubscriptionCount ?? 0} boost(s))`,
+            inline: true,
+          },
+          { name: 'Langue Discord', value: `\`${guild.preferredLocale}\``, inline: true },
+          { name: 'Créé le', value: `<t:${createdUnix}:D> (<t:${createdUnix}:R>)`, inline: true },
+          { name: 'Total serveurs', value: `${guild.client.guilds.cache.size}`, inline: true }
+        )
+        .setTimestamp();
+
+      const iconUrl = guild.iconURL({ size: 256 });
+      if (iconUrl) {
+        joinEmbed.setThumbnail(iconUrl);
+      }
+
+      await sendGuildLogMessage(guild.client, { embeds: [joinEmbed] });
+    } catch (err) {
+      console.warn(`[Logoto] Failed to log guildCreate for ${guild.id}:`, err);
+    }
+
     try {
       const locale = normalizeLocale(guild.preferredLocale);
       const targetChannel = findWelcomeChannel(guild);
@@ -94,14 +155,50 @@ export function registerLifecycleEvents(client: Client): void {
   });
 
   client.on(Events.GuildDelete, async (guild) => {
+    updateBotPresence(client);
+
     try {
-      const embed = new EmbedBuilder()
+      const createdUnix = guild.createdTimestamp
+        ? Math.floor(guild.createdTimestamp / 1000)
+        : null;
+
+      const leaveEmbed = new EmbedBuilder()
         .setColor(0xed4245)
-        .setTitle('Logoto — Serveur quitté')
-        .setDescription(`Bot enlevé de **${guild.name ?? 'Inconnu'}** (\`${guild.id}\`)`)
+        .setTitle(`🔴 Bot retiré d'un serveur — ${guild.name || 'Inconnu'}`)
+        .addFields(
+          { name: 'Nom', value: guild.name || 'Inconnu', inline: true },
+          { name: 'ID', value: `\`${guild.id}\``, inline: true },
+          {
+            name: 'Propriétaire',
+            value: guild.ownerId ? `<@${guild.ownerId}> (\`${guild.ownerId}\`)` : 'Inconnu',
+            inline: false,
+          },
+          {
+            name: 'Membres',
+            value: typeof guild.memberCount === 'number' ? String(guild.memberCount) : 'Inconnu',
+            inline: true,
+          },
+          {
+            name: 'Boosts',
+            value:
+              typeof guild.premiumTier === 'number'
+                ? `Niveau ${guild.premiumTier} (${guild.premiumSubscriptionCount ?? 0} boost(s))`
+                : 'Inconnu',
+            inline: true,
+          },
+          ...(createdUnix
+            ? [{ name: 'Créé le', value: `<t:${createdUnix}:D> (<t:${createdUnix}:R>)`, inline: true }]
+            : []),
+          { name: 'Total serveurs restants', value: `${client.guilds.cache.size}`, inline: true }
+        )
         .setTimestamp();
 
-      await sendAdminMessage(client, { embeds: [embed] });
+      const iconUrl = guild.iconURL?.({ size: 256 });
+      if (iconUrl) {
+        leaveEmbed.setThumbnail(iconUrl);
+      }
+
+      await sendGuildLogMessage(client, { embeds: [leaveEmbed] });
     } catch (err) {
       console.warn(`[Logoto] Error during guildDelete for ${guild.id}:`, err);
     }
