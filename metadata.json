@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Logoto",
+  "description": "Bot Discord v2 sans base de données automatisant l'identité visuelle d'un serveur à des dates programmées.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
