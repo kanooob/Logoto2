@@ -1,1 +1,50 @@
 @import "tailwindcss";
+
+:root {
+  --logoto-canvas: #36393f;
+  --logoto-surface: #2f3136;
+  --logoto-elevated: #292b2f;
+  --logoto-olive: #8c935d;
+  --logoto-olive-dark: #767d4f;
+  --logoto-olive-light: #a3ab72;
+  --logoto-text: #f2f3f5;
+  --logoto-muted: #b9bbbe;
+  --logoto-online: #43b581;
+  --logoto-offline: #f04747;
+}
+
+@layer base {
+  html {
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+    background-color: var(--logoto-canvas);
+    color: var(--logoto-text);
+    scroll-behavior: smooth;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -166,7 +166,7 @@ async function resolveAnnouncementChannel(guild: Guild): Promise<NewsChannel | n
   return null;
 }
 
-async function followAnnouncementsInLogChannel(
+export async function followAnnouncementsInLogChannel(
   guild: Guild,
   logChannel: TextChannel
 ): Promise<boolean> {
