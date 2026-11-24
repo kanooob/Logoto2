@@ -182,6 +182,18 @@ export async function ensureLogChannel(
     if (existing.parentId !== category.id) {
       await existing.setParent(category.id, { lockPermissions: false }).catch(() => {});
     }
+    const botId = guild.client.user?.id;
+    if (botId && guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)) {
+      await existing.permissionOverwrites
+        .edit(botId, {
+          ViewChannel: true,
+          SendMessages: true,
+          ManageChannels: true,
+          EmbedLinks: true,
+          ManageWebhooks: true,
+        })
+        .catch(() => {});
+    }
     return { category, logChannel: existing, created: false };
   }
 
@@ -282,6 +294,7 @@ export function getLocalDateParts(timezone: string, date: Date = new Date()): Lo
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
+    hourCycle: 'h23',
   });
 
   const parts = formatter.formatToParts(date);

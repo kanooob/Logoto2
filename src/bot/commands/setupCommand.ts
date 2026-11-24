@@ -75,18 +75,37 @@ function buildTimezoneStepPayload(locale: SupportedLocale) {
   return { embeds: [embed], components: [row1, row2] };
 }
 
+async function findAnnouncementChannelInGuild(targetGuild: Guild): Promise<NewsChannel | null> {
+  await targetGuild.channels.fetch().catch(() => null);
+  const announcements = Array.from(targetGuild.channels.cache.values()).filter(
+    (ch): ch is NewsChannel => ch.type === ChannelType.GuildAnnouncement
+  );
+  if (announcements.length === 0) return null;
+
+  const preferred = announcements.find((ch) =>
+    /annonce|announcement|news|update|logoto/i.test(ch.name)
+  );
+  return preferred ?? announcements[0];
+}
+
 async function resolveAnnouncementChannel(guild: Guild): Promise<NewsChannel | null> {
   const explicitChannelId =
     process.env.SUPPORT_ANNOUNCEMENT_CHANNEL_ID?.trim() ||
     process.env.ANNOUNCEMENT_CHANNEL_ID?.trim() ||
-    process.env.ANNOUNCEMENTS_CHANNEL_ID?.trim();
+    process.env.ANNOUNCEMENTS_CHANNEL_ID?.trim() ||
+    process.env.ANNONCES_CHANNEL_ID?.trim() ||
+    process.env.NEWS_CHANNEL_ID?.trim();
 
   if (explicitChannelId) {
-    const fetched = await guild.client.channels.fetch(explicitChannelId);
+    const fetched = await guild.client.channels.fetch(explicitChannelId).catch(() => null);
     if (fetched && fetched.type === ChannelType.GuildAnnouncement) {
       return fetched;
     }
-    return null;
+    if (fetched) {
+      console.warn(
+        `[Logoto] Announcement channel ${explicitChannelId} has type ${fetched.type}, expected GuildAnnouncement (${ChannelType.GuildAnnouncement}).`
+      );
+    }
   }
 
   const supportGuildId = process.env.SUPPORT_GUILD_ID?.trim();
@@ -95,11 +114,47 @@ async function resolveAnnouncementChannel(guild: Guild): Promise<NewsChannel | n
       guild.client.guilds.cache.get(supportGuildId) ??
       (await guild.client.guilds.fetch(supportGuildId).catch(() => null));
     if (supportGuild) {
-      await supportGuild.channels.fetch().catch(() => null);
-      const announcement = supportGuild.channels.cache.find(
-        (ch): ch is NewsChannel => ch.type === ChannelType.GuildAnnouncement
-      );
-      if (announcement) return announcement;
+      const found = await findAnnouncementChannelInGuild(supportGuild);
+      if (found) return found;
+    }
+  }
+
+  const supportInviteRaw =
+    process.env.SUPPORT_INVITE_URL?.trim() ||
+    process.env.SUPPORT_URL?.trim() ||
+    process.env.SUPPORT_SERVER_URL?.trim();
+  if (supportInviteRaw) {
+    const invite = await guild.client.fetchInvite(supportInviteRaw).catch(() => null);
+    if (invite?.guild?.id) {
+      const invitedGuild =
+        guild.client.guilds.cache.get(invite.guild.id) ??
+        (await guild.client.guilds.fetch(invite.guild.id).catch(() => null));
+      if (invitedGuild) {
+        const found = await findAnnouncementChannelInGuild(invitedGuild);
+        if (found) return found;
+      }
+    }
+  }
+
+  const adminChannelIds = [
+    process.env.ADMIN_CHANNEL_ID?.trim(),
+    process.env.GUILD_LOG_CHANNEL_ID?.trim(),
+    process.env.SERVERS_CHANNEL_ID?.trim(),
+    process.env.PING_CHANNEL_ID?.trim(),
+  ].filter((id): id is string => Boolean(id));
+
+  for (const chId of adminChannelIds) {
+    const ch = await guild.client.channels.fetch(chId).catch(() => null);
+    if (ch && 'guild' in ch && ch.guild) {
+      const found = await findAnnouncementChannelInGuild(ch.guild);
+      if (found) return found;
+    }
+  }
+
+  for (const candidateGuild of guild.client.guilds.cache.values()) {
+    if (/logoto/i.test(candidateGuild.name)) {
+      const found = await findAnnouncementChannelInGuild(candidateGuild);
+      if (found) return found;
     }
   }
 
@@ -112,7 +167,16 @@ async function followAnnouncementsInLogChannel(
 ): Promise<boolean> {
   try {
     const announcementChannel = await resolveAnnouncementChannel(guild);
-    if (!announcementChannel) return false;
+    if (!announcementChannel) {
+      console.warn(
+        `[Logoto] No announcement channel resolved for /setup in guild ${guild.id} (set SUPPORT_ANNOUNCEMENT_CHANNEL_ID or SUPPORT_GUILD_ID).`
+      );
+      return false;
+    }
+
+    if (announcementChannel.id === logChannel.id) {
+      return false;
+    }
 
     const existingWebhooks = await logChannel.fetchWebhooks().catch(() => null);
     const alreadyFollowing = existingWebhooks?.some(

@@ -156,6 +156,42 @@ export function formatLocalDateTimeDisplay(
   }
 }
 
+export function formatLocalDateDisplay(
+  timezone: string,
+  locale: SupportedLocale,
+  date: Date = new Date()
+): string {
+  const intlLocale = locale === 'fr' ? 'fr-FR' : 'en-GB';
+  const normalized = normalizeTimeZone(timezone) ?? 'UTC';
+  const offsetMinutes = parseUtcOffsetMinutes(normalized);
+
+  if (offsetMinutes !== null) {
+    const shifted = new Date(date.getTime() + offsetMinutes * 60_000);
+    return new Intl.DateTimeFormat(intlLocale, {
+      timeZone: 'UTC',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(shifted);
+  }
+
+  try {
+    return new Intl.DateTimeFormat(intlLocale, {
+      timeZone: normalized,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat(intlLocale, {
+      timeZone: 'UTC',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date);
+  }
+}
+
 export function truncateValue(value: string, max = 60): string {
   const cleaned = value.trim();
   if (!cleaned) return '—';

@@ -1,12 +1,20 @@
 import { ActivityType, EmbedBuilder, type Client, type Guild } from 'discord.js';
 import { getEventTypeLabel, t } from '../i18n/index.js';
-import { PRIMARY_COLOR, type EventRecord, type GuildConfig } from '../types.js';
-import { isSafeImageUrl, isValidServerName } from '../utils/validators.js';
+import { PRIMARY_COLOR, type EventRecord, type EventType, type GuildConfig, type SupportedLocale } from '../types.js';
+import { formatLocalDateDisplay, isSafeImageUrl, isValidServerName } from '../utils/validators.js';
 import { buildEventChannelName, listEvents } from './eventService.js';
 import { getGuildConfig, getLocalDateParts, sendLogEmbed } from './guildConfigService.js';
 
-export const SCHEDULER_INTERVAL_MS = 180_000;
+export const SCHEDULER_INTERVAL_MS = 60_000;
+const HEALTH_REPORT_INTERVAL_MS = 180_000;
 const QUEUE_STEP_DELAY_MS = 1_500;
+
+const APPLIED_DISPLAY_ORDER: Record<EventType, number> = {
+  n: 0,
+  l: 1,
+  b: 2,
+  i: 3,
+};
 
 export const lastTriggeredByGuild = new Map<string, string>();
 export const botStartedAtUnix = Math.floor(Date.now() / 1000);
@@ -14,6 +22,7 @@ export const botStartedAtUnix = Math.floor(Date.now() / 1000);
 let intervalHandle: NodeJS.Timeout | null = null;
 let queueChain: Promise<void> = Promise.resolve();
 let cycleInProgress = false;
+let lastHealthReportAt = 0;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -30,6 +39,19 @@ function enqueueTask(task: () => Promise<void>): Promise<void> {
   });
   queueChain = next.catch(() => {});
   return next;
+}
+
+function getAppliedLineLabel(locale: SupportedLocale, type: EventType): string {
+  switch (type) {
+    case 'n':
+      return t(locale, 'logAppliedTypeName');
+    case 'l':
+      return t(locale, 'logAppliedTypeLogo');
+    case 'b':
+      return t(locale, 'logAppliedTypeBanner');
+    case 'i':
+      return t(locale, 'logAppliedTypeSplash');
+  }
 }
 
 export function updateBotPresence(client: Client): void {
@@ -77,27 +99,11 @@ export async function reportAdminHealth(client: Client): Promise<void> {
 async function applyEventToGuild(
   guild: Guild,
   config: GuildConfig,
-  event: EventRecord,
-  dateKey: string
+  event: EventRecord
 ): Promise<{ ok: boolean; error?: string }> {
   const channelName = buildEventChannelName(event.type, event.day, event.month);
   const typeLabel = getEventTypeLabel(config.locale, event.type);
   const value = event.value.trim();
-
-  const triggerEmbed = new EmbedBuilder()
-    .setColor(PRIMARY_COLOR)
-    .setTitle(t(config.locale, 'logTriggerTitle', { channelName }))
-    .setDescription(
-      t(config.locale, 'logTriggerDesc', {
-        type: typeLabel,
-        date: `${event.day}/${event.month}`,
-        dateKey,
-        tz: config.timezone,
-      })
-    )
-    .setTimestamp();
-
-  await sendLogEmbed(guild, triggerEmbed);
 
   try {
     if (!value) {
@@ -137,13 +143,6 @@ async function applyEventToGuild(
       }
     }
 
-    const successEmbed = new EmbedBuilder()
-      .setColor(0x57f287)
-      .setTitle(t(config.locale, 'logSuccessTitle', { channelName }))
-      .setDescription(t(config.locale, 'logSuccessDesc', { value }))
-      .setTimestamp();
-
-    await sendLogEmbed(guild, successEmbed);
     return { ok: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -162,6 +161,45 @@ async function applyEventToGuild(
     await sendLogEmbed(guild, errorEmbed);
     return { ok: false, error: message };
   }
+}
+
+async function applyGuildDailyEvents(
+  guild: Guild,
+  config: GuildConfig,
+  matching: EventRecord[]
+): Promise<void> {
+  const appliedEvents: EventRecord[] = [];
+
+  for (let idx = 0; idx < matching.length; idx++) {
+    const event = matching[idx];
+    const result = await applyEventToGuild(guild, config, event);
+    if (result.ok) {
+      appliedEvents.push(event);
+    }
+    if (idx < matching.length - 1) {
+      await sleep(QUEUE_STEP_DELAY_MS);
+    }
+  }
+
+  if (appliedEvents.length === 0) return;
+
+  const sortedApplied = [...appliedEvents].sort(
+    (a, b) => APPLIED_DISPLAY_ORDER[a.type] - APPLIED_DISPLAY_ORDER[b.type]
+  );
+
+  const lines = sortedApplied.map(
+    (ev) => `• ${getAppliedLineLabel(config.locale, ev.type)} - <#${ev.channel.id}>`
+  );
+
+  const dateFooter = formatLocalDateDisplay(config.timezone, config.locale);
+
+  const summaryEmbed = new EmbedBuilder()
+    .setColor(PRIMARY_COLOR)
+    .setTitle(t(config.locale, 'logAppliedTitle'))
+    .setDescription(lines.join('\n'))
+    .setFooter({ text: dateFooter });
+
+  await sendLogEmbed(guild, summaryEmbed);
 }
 
 export async function processDailyEvents(
@@ -183,10 +221,16 @@ export async function processDailyEvents(
       if (!config.logChannel) continue;
 
       checkedGuilds += 1;
-      const { day, month, dateKey } = getLocalDateParts(config.timezone);
+      const { day, month, hour, minute, dateKey } = getLocalDateParts(config.timezone);
 
-      if (!options.force && lastTriggeredByGuild.get(guild.id) === dateKey) {
-        continue;
+      if (!options.force) {
+        // Trigger strictly at midnight (00:00–00:04) in the guild's configured timezone
+        if (hour !== 0 || minute >= 5) {
+          continue;
+        }
+        if (lastTriggeredByGuild.get(guild.id) === dateKey) {
+          continue;
+        }
       }
 
       lastTriggeredByGuild.set(guild.id, dateKey);
@@ -194,11 +238,11 @@ export async function processDailyEvents(
       const events = await listEvents(guild);
       const matching = events.filter((e) => e.day === day && e.month === month);
 
-      for (const event of matching) {
-        queuedEvents += 1;
+      if (matching.length > 0) {
+        queuedEvents += matching.length;
         tasks.push(
           enqueueTask(async () => {
-            await applyEventToGuild(guild, config, event, dateKey);
+            await applyGuildDailyEvents(guild, config, matching);
           })
         );
       }
@@ -219,7 +263,11 @@ export async function runScheduledCycle(client: Client): Promise<void> {
   cycleInProgress = true;
   try {
     updateBotPresence(client);
-    await reportAdminHealth(client);
+    const now = Date.now();
+    if (now - lastHealthReportAt >= HEALTH_REPORT_INTERVAL_MS) {
+      lastHealthReportAt = now;
+      await reportAdminHealth(client);
+    }
     await processDailyEvents(client);
   } catch (err) {
     console.error('[Logoto] Scheduled cycle error:', err);
@@ -234,6 +282,7 @@ export function startScheduler(client: Client): void {
   }
 
   updateBotPresence(client);
+  lastHealthReportAt = Date.now();
   void processDailyEvents(client);
 
   intervalHandle = setInterval(() => {
