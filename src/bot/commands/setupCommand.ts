@@ -24,6 +24,7 @@ import {
   ensureLogChannel,
   formatConfigTopic,
   getGuildConfig,
+  getLocalDateParts,
   isValidTimeZone,
   normalizeTimeZone,
   setGuildConfig,
@@ -203,8 +204,14 @@ async function followAnnouncementsInLogChannel(
 
 async function finalizeSetup(guild: Guild, locale: SupportedLocale, timezone: string) {
   const normalizedTz = normalizeTimeZone(timezone) ?? timezone;
+  const existingConfig = await getGuildConfig(guild);
   const { logChannel } = await ensureLogChannel(guild);
-  const updated = await setGuildConfig(guild, { timezone: normalizedTz, locale });
+  const todayKey = getLocalDateParts(normalizedTz).dateKey;
+  const updated = await setGuildConfig(guild, {
+    timezone: normalizedTz,
+    locale,
+    lastRunDate: existingConfig.lastRunDate ?? todayKey,
+  });
 
   const topic = formatConfigTopic(updated.timezone, updated.locale);
   const summaryEmbed = new EmbedBuilder()

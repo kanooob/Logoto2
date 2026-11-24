@@ -1,6 +1,7 @@
-import { ChannelType, PermissionsBitField, type Guild, type TextChannel } from 'discord.js';
+import { ChannelType, type Guild, type TextChannel } from 'discord.js';
 import type { EventChannelParts, EventRecord, EventType, UpsertEventInput, UpsertEventResult } from '../types.js';
-import { ensureLogotoCategory, findLogotoCategory } from './guildConfigService.js';
+import { isValidDayForMonth } from '../utils/validators.js';
+import { buildPrivateOverwrites, ensureLogotoCategory, findLogotoCategory } from './guildConfigService.js';
 
 const EVENT_CHANNEL_REGEX = /^(l|n|b|i)-([1-9]|[12][0-9]|3[01])-([1-9]|1[0-2])$/;
 
@@ -22,11 +23,15 @@ export function parseEventChannelName(name: string): EventChannelParts | null {
   const match = EVENT_CHANNEL_REGEX.exec(name.trim().toLowerCase());
   if (!match) return null;
 
-  const [, type, day, month] = match;
+  const [, type, rawDay, rawMonth] = match;
+  const day = Number(rawDay);
+  const month = Number(rawMonth);
+  if (!isValidDayForMonth(day, month)) return null;
+
   return {
     type: type as EventType,
-    day: Number(day),
-    month: Number(month),
+    day,
+    month,
   };
 }
 
@@ -87,33 +92,12 @@ export async function upsertEvent(
     return { channel: primary, created: false };
   }
 
-  const botId = guild.client.user?.id;
-  const permissionOverwrites = [
-    {
-      id: guild.roles.everyone.id,
-      deny: [PermissionsBitField.Flags.ViewChannel],
-    },
-    ...(botId
-      ? [
-          {
-            id: botId,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ManageChannels,
-              PermissionsBitField.Flags.EmbedLinks,
-            ],
-          },
-        ]
-      : []),
-  ];
-
   const createdChannel = await guild.channels.create({
     name: channelName,
     type: ChannelType.GuildText,
     parent: category.id,
     topic: cleanValue,
-    permissionOverwrites,
+    permissionOverwrites: buildPrivateOverwrites(guild),
     reason: `Logoto scheduled event ${channelName}`,
   });
 

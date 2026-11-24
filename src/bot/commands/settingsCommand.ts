@@ -49,8 +49,10 @@ import {
   checkBotGuildPermissions,
   formatLocalDateTimeDisplay,
   getBoostRequirementWarning,
+  getMaxDaysInMonth,
   hasGuildAdminPermission,
   isSafeImageUrl,
+  isValidDayForMonth,
   isValidServerName,
   parseValidDay,
   truncateValue,
@@ -250,15 +252,27 @@ function buildCreateEventPayload(
       : '—';
 
   const boostWarning = getBoostRequirementWarning(guild, draft.type, locale);
+  const invalidDateWarning =
+    draft.day && draft.month && !isValidDayForMonth(draft.day, draft.month)
+      ? `⚠️ ${t(locale, 'invalidDayForMonth', {
+          day: draft.day,
+          month: getMonthName(locale, draft.month),
+          maxDay: getMaxDaysInMonth(draft.month),
+        })}`
+      : null;
+
   const baseDesc = t(locale, 'createEventDesc', { type: typeStr, date: dateStr, channelName: chName });
-  const description = boostWarning ? `${baseDesc}\n\n${boostWarning}` : baseDesc;
+  const warnings = [boostWarning, invalidDateWarning].filter((w): w is string => Boolean(w));
+  const description = warnings.length > 0 ? `${baseDesc}\n\n${warnings.join('\n\n')}` : baseDesc;
 
   const embed = new EmbedBuilder()
     .setColor(PRIMARY_COLOR)
     .setTitle(t(locale, 'createEventTitle'))
     .setDescription(description);
 
-  const ready = Boolean(draft.type && draft.month && draft.day);
+  const ready = Boolean(
+    draft.type && draft.month && draft.day && isValidDayForMonth(draft.day, draft.month)
+  );
   const btnRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId('settings:create_day_btn')
@@ -400,14 +414,27 @@ function buildEditDateTypePayload(
       : '—';
 
   const boostWarning = getBoostRequirementWarning(guild, draft.type, locale);
+  const invalidDateWarning =
+    draft.day && draft.month && !isValidDayForMonth(draft.day, draft.month)
+      ? `⚠️ ${t(locale, 'invalidDayForMonth', {
+          day: draft.day,
+          month: getMonthName(locale, draft.month),
+          maxDay: getMaxDaysInMonth(draft.month),
+        })}`
+      : null;
+
   const baseDesc = t(locale, 'editDateTypeDesc', { type: typeStr, date: dateStr, newName });
+  const warnings = [boostWarning, invalidDateWarning].filter((w): w is string => Boolean(w));
+  const description = warnings.length > 0 ? `${baseDesc}\n\n${warnings.join('\n\n')}` : baseDesc;
 
   const embed = new EmbedBuilder()
     .setColor(PRIMARY_COLOR)
     .setTitle(t(locale, 'editDateTypeTitle', { channelName: oldName }))
-    .setDescription(boostWarning ? `${baseDesc}\n\n${boostWarning}` : baseDesc);
+    .setDescription(description);
 
-  const ready = Boolean(draft.type && draft.month && draft.day);
+  const ready = Boolean(
+    draft.type && draft.month && draft.day && isValidDayForMonth(draft.day, draft.month)
+  );
   const btnRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`settings:editdt_day_btn:${channelId}`)
@@ -644,7 +671,7 @@ export async function handleSettingsInteraction(
 
       if (config.logChannel) {
         const logCreatedAt = config.logChannel.createdAt.toISOString();
-        const topic = config.logChannel.topic?.trim() || formatConfigTopic(config.timezone, config.locale);
+        const topic = formatConfigTopic(config.timezone, config.locale);
         lines.push(`# Channel ${config.logChannel.name} | Created-At: ${logCreatedAt}`);
         lines.push(`${config.logChannel.name}:${topic}`);
         exportedCount += 1;
@@ -745,7 +772,10 @@ export async function handleSettingsInteraction(
 
         try {
           const parsedUrl = new URL(attachment.url);
-          if (parsedUrl.protocol !== 'https:' || !ALLOWED_DISCORD_CDN_HOSTS.has(parsedUrl.hostname)) {
+          if (
+            parsedUrl.protocol !== 'https:' ||
+            !ALLOWED_DISCORD_CDN_HOSTS.has(parsedUrl.hostname.toLowerCase())
+          ) {
             throw new Error('Untrusted attachment URL');
           }
 
@@ -901,6 +931,17 @@ export async function handleSettingsInteraction(
         });
         return true;
       }
+      if (!isValidDayForMonth(draft.day, draft.month)) {
+        await interaction.reply({
+          content: t(locale, 'invalidDayForMonth', {
+            day: draft.day,
+            month: getMonthName(locale, draft.month),
+            maxDay: getMaxDaysInMonth(draft.month),
+          }),
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      }
 
       const channelName = buildEventChannelName(draft.type, draft.day, draft.month);
       await interaction.showModal(
@@ -1002,6 +1043,17 @@ export async function handleSettingsInteraction(
       const draft = getSettingsSession(guild.id, userId);
       if (!draft || draft.mode !== 'editDateType' || !draft.type || !draft.month || !draft.day) {
         await interaction.reply({ content: t(locale, 'sessionExpired'), flags: MessageFlags.Ephemeral });
+        return true;
+      }
+      if (!isValidDayForMonth(draft.day, draft.month)) {
+        await interaction.reply({
+          content: t(locale, 'invalidDayForMonth', {
+            day: draft.day,
+            month: getMonthName(locale, draft.month),
+            maxDay: getMaxDaysInMonth(draft.month),
+          }),
+          flags: MessageFlags.Ephemeral,
+        });
         return true;
       }
 
@@ -1189,6 +1241,18 @@ export async function handleSettingsInteraction(
       }
 
       const current = getSettingsSession(guild.id, userId);
+      if (current?.month && !isValidDayForMonth(parsedDay, current.month)) {
+        await interaction.reply({
+          content: t(locale, 'invalidDayForMonth', {
+            day: parsedDay,
+            month: getMonthName(locale, current.month),
+            maxDay: getMaxDaysInMonth(current.month),
+          }),
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      }
+
       const next = setSettingsSession(guild.id, userId, {
         mode: 'create',
         type: current?.type,
@@ -1216,12 +1280,25 @@ export async function handleSettingsInteraction(
       const ch = guild.channels.cache.get(channelId);
       const parsedChannel = ch ? parseEventChannelName(ch.name) : null;
       const current = getSettingsSession(guild.id, userId);
+      const targetMonth = current?.month ?? parsedChannel?.month;
+
+      if (targetMonth && !isValidDayForMonth(parsedDay, targetMonth)) {
+        await interaction.reply({
+          content: t(locale, 'invalidDayForMonth', {
+            day: parsedDay,
+            month: getMonthName(locale, targetMonth),
+            maxDay: getMaxDaysInMonth(targetMonth),
+          }),
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      }
 
       const next = setSettingsSession(guild.id, userId, {
         mode: 'editDateType',
         targetChannelId: channelId,
         type: current?.type ?? parsedChannel?.type,
-        month: current?.month ?? parsedChannel?.month,
+        month: targetMonth,
         day: parsedDay,
       });
 
@@ -1234,7 +1311,14 @@ export async function handleSettingsInteraction(
 
     if (cid === 'settings:create_value_modal') {
       const draft = getSettingsSession(guild.id, userId);
-      if (!draft || draft.mode !== 'create' || !draft.type || !draft.month || !draft.day) {
+      if (
+        !draft ||
+        draft.mode !== 'create' ||
+        !draft.type ||
+        !draft.month ||
+        !draft.day ||
+        !isValidDayForMonth(draft.day, draft.month)
+      ) {
         await interaction.reply({ content: t(locale, 'sessionExpired'), flags: MessageFlags.Ephemeral });
         return true;
       }

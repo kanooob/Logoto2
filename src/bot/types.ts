@@ -11,6 +11,7 @@ export interface GuildConfig {
   locale: SupportedLocale;
   category: CategoryChannel | null;
   logChannel: TextChannel | null;
+  lastRunDate?: string;
 }
 
 export interface LocalDateParts {

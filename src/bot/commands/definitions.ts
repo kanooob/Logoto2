@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { InteractionContextType, SlashCommandBuilder } from 'discord.js';
 
 export const slashCommandDefinitions = [
   new SlashCommandBuilder()
@@ -7,7 +7,7 @@ export const slashCommandDefinitions = [
     .setDescriptionLocalizations({
       fr: 'Configurer Logoto sur ce serveur (langue, fuseau horaire, salons)',
     })
-    .setDMPermission(false),
+    .setContexts(InteractionContextType.Guild),
 
   new SlashCommandBuilder()
     .setName('settings')
@@ -15,7 +15,7 @@ export const slashCommandDefinitions = [
     .setDescriptionLocalizations({
       fr: 'Gérer le fuseau horaire, la langue et les événements programmés',
     })
-    .setDMPermission(false),
+    .setContexts(InteractionContextType.Guild),
 
   new SlashCommandBuilder()
     .setName('ping')

@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import {
   EmbedBuilder,
   GuildPremiumTier,
@@ -15,11 +16,96 @@ import {
 } from '../services/guildConfigService.js';
 import type { EventType, SupportedLocale } from '../types.js';
 
-const PRIVATE_IPV4_REGEX = /^(127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[0-1])\.)/;
+const RESERVED_HOST_SUFFIXES = [
+  '.local',
+  '.localhost',
+  '.internal',
+  '.arpa',
+  '.lan',
+  '.home',
+  '.corp',
+  '.localdomain',
+  '.test',
+  '.example',
+  '.invalid',
+];
+
+function isPrivateOrReservedIpv4(ip: string): boolean {
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
+    return true;
+  }
+  const [a, b, c] = parts;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  if (a === 169 && b === 254) return true; // Link-local / cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 0 && (c === 0 || c === 2)) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a === 198 && b === 51 && c === 100) return true;
+  if (a === 203 && b === 0 && c === 113) return true;
+  if (a >= 224) return true; // Multicast & reserved
+  return false;
+}
+
+function isPrivateOrReservedIpv6(rawIp: string): boolean {
+  const zoneIdx = rawIp.indexOf('%');
+  const ip = (zoneIdx !== -1 ? rawIp.slice(0, zoneIdx) : rawIp).toLowerCase();
+
+  if (ip === '::' || ip === '::1') return true;
+
+  // Handle IPv4-mapped / IPv4-compatible IPv6 (e.g. ::ffff:127.0.0.1 or ::ffff:7f00:1)
+  const v4MappedPrefix = '::ffff:';
+  if (ip.startsWith(v4MappedPrefix)) {
+    const rest = ip.slice(v4MappedPrefix.length);
+    if (rest.includes('.')) {
+      return isPrivateOrReservedIpv4(rest);
+    }
+    const hexParts = rest.split(':');
+    if (hexParts.length === 2) {
+      const hi = Number.parseInt(hexParts[0], 16);
+      const lo = Number.parseInt(hexParts[1], 16);
+      if (Number.isFinite(hi) && Number.isFinite(lo)) {
+        const ipv4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+        return isPrivateOrReservedIpv4(ipv4);
+      }
+    }
+    return true;
+  }
+
+  // Expand compressed :: notation to inspect leading hextets
+  const halves = ip.split('::');
+  if (halves.length > 2) return true;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - (left.length + right.length);
+  if (missing < 0) return true;
+  const hextets = [...left, ...Array<string>(missing).fill('0'), ...right];
+  if (hextets.length !== 8) return true;
+
+  const nums = hextets.map((h) => Number.parseInt(h, 16));
+  if (nums.some((n) => !Number.isFinite(n) || n < 0 || n > 0xffff)) return true;
+
+  const first = nums[0];
+  const second = nums[1];
+  const allZeroExceptLast = nums.slice(0, 7).every((n) => n === 0);
+  if (allZeroExceptLast && (nums[7] === 0 || nums[7] === 1)) return true; // :: / ::1
+  if ((first & 0xfe00) === 0xfc00) return true; // ULA fc00::/7 (includes fd00::/8)
+  if ((first & 0xffc0) === 0xfe80) return true; // Link-local fe80::/10
+  if ((first & 0xffc0) === 0xfec0) return true; // Deprecated site-local fec0::/10
+  if ((first & 0xff00) === 0xff00) return true; // Multicast ff00::/8
+  if (first === 0x0100 && second === 0) return true; // Discard 100::/64
+  if (first === 0x2001 && second === 0x0db8) return true; // Documentation 2001:db8::/32
+  if (first === 0x2002) return true; // 6to4 relay (can embed private IPv4)
+
+  return false;
+}
 
 export function isSafeImageUrl(raw: string): boolean {
   const trimmed = raw.trim();
   if (!trimmed || trimmed.length > 1000) return false;
+  if (/[\s\\]/.test(trimmed)) return false;
 
   let parsed: URL;
   try {
@@ -31,18 +117,35 @@ export function isSafeImageUrl(raw: string): boolean {
   if (parsed.protocol !== 'https:') return false;
   if (parsed.username || parsed.password) return false;
 
-  const host = parsed.hostname.toLowerCase();
+  const rawHost = parsed.hostname.toLowerCase().replace(/\.+$/, '');
+  if (!rawHost) return false;
+
+  const unwrappedHost =
+    rawHost.startsWith('[') && rawHost.endsWith(']') ? rawHost.slice(1, -1) : rawHost;
+
+  const ipVersion = isIP(unwrappedHost);
+  if (ipVersion === 4) {
+    return !isPrivateOrReservedIpv4(unwrappedHost);
+  }
+  if (ipVersion === 6) {
+    return !isPrivateOrReservedIpv6(unwrappedHost);
+  }
+
   if (
-    !host ||
-    host === 'localhost' ||
-    host === '::1' ||
-    host === '[::1]' ||
-    host.endsWith('.local') ||
-    host.endsWith('.internal') ||
-    PRIVATE_IPV4_REGEX.test(host)
+    unwrappedHost === 'localhost' ||
+    RESERVED_HOST_SUFFIXES.some((suffix) => unwrappedHost.endsWith(suffix))
   ) {
     return false;
   }
+
+  // Must be a multi-label public domain name (blocks bare single-label names and raw hex/int hosts)
+  if (!unwrappedHost.includes('.')) return false;
+
+  const labels = unwrappedHost.split('.');
+  if (labels.some((label) => !label || label.length > 63)) return false;
+  const tld = labels[labels.length - 1];
+  // Reject numeric/hex TLDs (e.g. 0x7f000001 or octal tricks)
+  if (/^\d+$/.test(tld) || /^0x[0-9a-f]+$/i.test(tld)) return false;
 
   return true;
 }
@@ -52,11 +155,32 @@ export function isValidServerName(raw: string): boolean {
   return trimmed.length >= 2 && trimmed.length <= 100;
 }
 
-export function parseValidDay(raw: string): number | null {
+export function getMaxDaysInMonth(month: number): number {
+  switch (Math.trunc(month)) {
+    case 2:
+      return 29;
+    case 4:
+    case 6:
+    case 9:
+    case 11:
+      return 30;
+    default:
+      return 31;
+  }
+}
+
+export function isValidDayForMonth(day: number, month: number): boolean {
+  if (!Number.isInteger(day) || !Number.isInteger(month)) return false;
+  if (month < 1 || month > 12) return false;
+  return day >= 1 && day <= getMaxDaysInMonth(month);
+}
+
+export function parseValidDay(raw: string, month?: number): number | null {
   const trimmed = raw.trim();
   if (!/^\d{1,2}$/.test(trimmed)) return null;
   const num = Number(trimmed);
   if (!Number.isInteger(num) || num < 1 || num > 31) return null;
+  if (month !== undefined && !isValidDayForMonth(num, month)) return null;
   return num;
 }
 

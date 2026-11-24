@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
   ChannelType,
   PermissionsBitField,
@@ -15,6 +16,48 @@ export const DEFAULT_TIMEZONE = 'UTC';
 export const DEFAULT_LOCALE: SupportedLocale = 'en';
 
 const UTC_OFFSET_REGEX = /^(?:(?:utc|gmt)\s*)?([+-])\s*(\d{1,2})(?::(\d{2}))?$/i;
+const DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+interface VerifiedGuildState {
+  categoryId?: string;
+  logChannelId?: string;
+  timezone: string;
+  locale: SupportedLocale;
+  lastRunDate?: string;
+  signed: boolean;
+}
+
+const verifiedGuildCache = new Map<string, VerifiedGuildState>();
+
+function getSigningSecret(): string | null {
+  return process.env.CONFIG_SIGNING_SECRET?.trim() || process.env.TOKEN?.trim() || null;
+}
+
+function computeTopicSignature(
+  guildId: string,
+  timezone: string,
+  locale: SupportedLocale,
+  lastRunDate?: string
+): string | null {
+  const secret = getSigningSecret();
+  if (!secret) return null;
+  const payload = `${guildId}|${timezone}|${locale}|${lastRunDate ?? ''}`;
+  return createHmac('sha256', secret).update(payload).digest('base64url').slice(0, 16);
+}
+
+function verifyTopicSignature(
+  guildId: string,
+  timezone: string,
+  locale: SupportedLocale,
+  lastRunDate: string | undefined,
+  sig: string
+): boolean {
+  const expected = computeTopicSignature(guildId, timezone, locale, lastRunDate);
+  if (!expected) return false;
+  const actualBuf = Buffer.from(sig, 'utf8');
+  const expectedBuf = Buffer.from(expected, 'utf8');
+  return actualBuf.length === expectedBuf.length && timingSafeEqual(actualBuf, expectedBuf);
+}
 
 export function parseUtcOffsetMinutes(tz: string): number | null {
   if (!tz || typeof tz !== 'string') return null;
@@ -67,21 +110,48 @@ export function isValidTimeZone(tz: string): boolean {
   return normalizeTimeZone(tz) !== null;
 }
 
-export function formatConfigTopic(timezone: string, locale: string): string {
+export function formatConfigTopic(
+  timezone: string,
+  locale: string,
+  options?: { lastRunDate?: string; guildId?: string }
+): string {
   const safeTz = normalizeTimeZone(timezone) ?? DEFAULT_TIMEZONE;
   const safeLocale = normalizeLocale(locale);
-  return `tz=${safeTz};lang=${safeLocale}`;
+  const safeLast =
+    options?.lastRunDate && DATE_KEY_REGEX.test(options.lastRunDate)
+      ? options.lastRunDate
+      : undefined;
+
+  const parts = [`tz=${safeTz}`, `lang=${safeLocale}`];
+  if (safeLast) {
+    parts.push(`last=${safeLast}`);
+  }
+  if (options?.guildId) {
+    const sig = computeTopicSignature(options.guildId, safeTz, safeLocale, safeLast);
+    if (sig) {
+      parts.push(`sig=${sig}`);
+    }
+  }
+  return parts.join(';');
 }
 
-export function parseConfigFromTopic(topic?: string | null): {
+export function parseConfigFromTopic(
+  topic?: string | null,
+  guildId?: string
+): {
   timezone: string;
   locale: SupportedLocale;
+  lastRunDate?: string;
+  hasSignature: boolean;
+  hasValidSignature: boolean;
 } {
   let timezone = DEFAULT_TIMEZONE;
   let locale: SupportedLocale = DEFAULT_LOCALE;
+  let lastRunDate: string | undefined;
+  let sig: string | undefined;
 
   if (!topic || typeof topic !== 'string') {
-    return { timezone, locale };
+    return { timezone, locale, hasSignature: false, hasValidSignature: false };
   }
 
   const segments = topic.split(';');
@@ -98,46 +168,110 @@ export function parseConfigFromTopic(topic?: string | null): {
       }
     } else if (key === 'lang') {
       locale = normalizeLocale(val);
+    } else if (key === 'last' && DATE_KEY_REGEX.test(val)) {
+      lastRunDate = val;
+    } else if (key === 'sig' && val) {
+      sig = val;
     }
   }
 
-  return { timezone, locale };
+  const hasSignature = Boolean(sig);
+  const hasValidSignature = Boolean(
+    guildId && sig && verifyTopicSignature(guildId, timezone, locale, lastRunDate, sig)
+  );
+
+  return { timezone, locale, lastRunDate, hasSignature, hasValidSignature };
+}
+
+function hasEveryoneDeniedView(channel: CategoryChannel | TextChannel): boolean {
+  const everyoneOverwrite = channel.permissionOverwrites.cache.get(channel.guild.roles.everyone.id);
+  return Boolean(everyoneOverwrite?.deny.has(PermissionsBitField.Flags.ViewChannel));
+}
+
+function compareSnowflakesOldestFirst(
+  a: { createdTimestamp: number; id: string },
+  b: { createdTimestamp: number; id: string }
+): number {
+  if (a.createdTimestamp !== b.createdTimestamp) {
+    return a.createdTimestamp - b.createdTimestamp;
+  }
+  return a.id.localeCompare(b.id);
 }
 
 export function findLogotoCategory(guild: Guild): CategoryChannel | null {
-  const category = guild.channels.cache.find(
-    (ch) => ch.type === ChannelType.GuildCategory && ch.name.toLowerCase() === CATEGORY_NAME.toLowerCase()
+  const cachedCategoryId = verifiedGuildCache.get(guild.id)?.categoryId;
+  const candidates = Array.from(guild.channels.cache.values()).filter(
+    (ch): ch is CategoryChannel =>
+      ch.type === ChannelType.GuildCategory && ch.name.toLowerCase() === CATEGORY_NAME.toLowerCase()
   );
-  return category?.type === ChannelType.GuildCategory ? category : null;
+
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  candidates.sort((a, b) => {
+    const score = (cat: CategoryChannel): number => {
+      let s = 0;
+      if (cachedCategoryId && cat.id === cachedCategoryId) s += 1000;
+      const children = guild.channels.cache.filter(
+        (ch): ch is TextChannel => ch.type === ChannelType.GuildText && ch.parentId === cat.id
+      );
+      const hasSignedLog = children.some(
+        (ch) =>
+          ch.name.toLowerCase() === LOG_CHANNEL_NAME &&
+          parseConfigFromTopic(ch.topic, guild.id).hasValidSignature
+      );
+      if (hasSignedLog) s += 500;
+      if (children.some((ch) => ch.name.toLowerCase() === LOG_CHANNEL_NAME)) s += 100;
+      if (hasEveryoneDeniedView(cat)) s += 50;
+      return s;
+    };
+
+    const diff = score(b) - score(a);
+    return diff !== 0 ? diff : compareSnowflakesOldestFirst(a, b);
+  });
+
+  return candidates[0];
 }
 
 export function findLogChannel(guild: Guild, category?: CategoryChannel | null): TextChannel | null {
   const targetCategory = category ?? findLogotoCategory(guild);
+  const cachedLogId = verifiedGuildCache.get(guild.id)?.logChannelId;
 
-  if (targetCategory) {
-    const insideCategory = guild.channels.cache.find(
-      (ch) =>
-        ch.type === ChannelType.GuildText &&
-        ch.parentId === targetCategory.id &&
-        ch.name.toLowerCase() === LOG_CHANNEL_NAME
-    );
-    if (insideCategory?.type === ChannelType.GuildText) {
-      return insideCategory;
-    }
-  }
-
-  const anywhere = guild.channels.cache.find(
-    (ch) => ch.type === ChannelType.GuildText && ch.name.toLowerCase() === LOG_CHANNEL_NAME
+  const candidates = Array.from(guild.channels.cache.values()).filter(
+    (ch): ch is TextChannel =>
+      ch.type === ChannelType.GuildText && ch.name.toLowerCase() === LOG_CHANNEL_NAME
   );
-  return anywhere?.type === ChannelType.GuildText ? anywhere : null;
+
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  candidates.sort((a, b) => {
+    const score = (ch: TextChannel): number => {
+      let s = 0;
+      if (cachedLogId && ch.id === cachedLogId) s += 1000;
+      if (parseConfigFromTopic(ch.topic, guild.id).hasValidSignature) s += 500;
+      if (targetCategory && ch.parentId === targetCategory.id) s += 200;
+      if (hasEveryoneDeniedView(ch)) s += 50;
+      return s;
+    };
+
+    const diff = score(b) - score(a);
+    return diff !== 0 ? diff : compareSnowflakesOldestFirst(a, b);
+  });
+
+  return candidates[0];
 }
 
-function buildPrivateOverwrites(guild: Guild) {
+export function buildPrivateOverwrites(guild: Guild) {
   const botId = guild.client.user?.id;
   const overwrites = [
     {
       id: guild.roles.everyone.id,
-      deny: [PermissionsBitField.Flags.ViewChannel],
+      deny: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.ManageChannels,
+        PermissionsBitField.Flags.SendMessages,
+      ],
     },
   ];
 
@@ -162,11 +296,23 @@ function buildPrivateOverwrites(guild: Guild) {
 
 export async function ensureLogotoCategory(guild: Guild): Promise<CategoryChannel> {
   const existing = findLogotoCategory(guild);
-  if (existing) return existing;
+  if (existing) {
+    if (!hasEveryoneDeniedView(existing)) {
+      await existing.permissionOverwrites
+        .edit(guild.roles.everyone.id, {
+          ViewChannel: false,
+          ManageChannels: false,
+          SendMessages: false,
+        })
+        .catch(() => {});
+    }
+    return existing;
+  }
 
   const created = await guild.channels.create({
     name: CATEGORY_NAME,
     type: ChannelType.GuildCategory,
+    permissionOverwrites: buildPrivateOverwrites(guild),
     reason: 'Logoto configuration category',
   });
   return created;
@@ -181,6 +327,15 @@ export async function ensureLogChannel(
   if (existing) {
     if (existing.parentId !== category.id) {
       await existing.setParent(category.id, { lockPermissions: false }).catch(() => {});
+    }
+    if (!hasEveryoneDeniedView(existing)) {
+      await existing.permissionOverwrites
+        .edit(guild.roles.everyone.id, {
+          ViewChannel: false,
+          ManageChannels: false,
+          SendMessages: false,
+        })
+        .catch(() => {});
     }
     const botId = guild.client.user?.id;
     if (botId && guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)) {
@@ -202,8 +357,16 @@ export async function ensureLogChannel(
     type: ChannelType.GuildText,
     parent: category.id,
     permissionOverwrites: buildPrivateOverwrites(guild),
-    topic: formatConfigTopic(DEFAULT_TIMEZONE, DEFAULT_LOCALE),
+    topic: formatConfigTopic(DEFAULT_TIMEZONE, DEFAULT_LOCALE, { guildId: guild.id }),
     reason: 'Logoto configuration and logs channel',
+  });
+
+  verifiedGuildCache.set(guild.id, {
+    categoryId: category.id,
+    logChannelId: logChannel.id,
+    timezone: DEFAULT_TIMEZONE,
+    locale: DEFAULT_LOCALE,
+    signed: Boolean(getSigningSecret()),
   });
 
   return { category, logChannel, created: true };
@@ -222,10 +385,40 @@ export async function getGuildConfig(guild: Guild): Promise<GuildConfig> {
     };
   }
 
-  const { timezone, locale } = parseConfigFromTopic(logChannel.topic);
+  const parsed = parseConfigFromTopic(logChannel.topic, guild.id);
+  const cached = verifiedGuildCache.get(guild.id);
+  const secretConfigured = Boolean(getSigningSecret());
+
+  const tampered =
+    (secretConfigured && parsed.hasSignature && !parsed.hasValidSignature) ||
+    (secretConfigured && !parsed.hasSignature && Boolean(cached?.signed));
+
+  if (tampered) {
+    console.warn(
+      `[Logoto] Ignored tampered or stripped config topic on guild ${guild.id}/${logChannel.id}.`
+    );
+    return {
+      timezone: cached?.timezone ?? DEFAULT_TIMEZONE,
+      locale: cached?.locale ?? DEFAULT_LOCALE,
+      lastRunDate: cached?.lastRunDate,
+      category,
+      logChannel,
+    };
+  }
+
+  verifiedGuildCache.set(guild.id, {
+    categoryId: category?.id ?? cached?.categoryId,
+    logChannelId: logChannel.id,
+    timezone: parsed.timezone,
+    locale: parsed.locale,
+    lastRunDate: parsed.lastRunDate,
+    signed: parsed.hasValidSignature || Boolean(cached?.signed),
+  });
+
   return {
-    timezone,
-    locale,
+    timezone: parsed.timezone,
+    locale: parsed.locale,
+    lastRunDate: parsed.lastRunDate,
     category,
     logChannel,
   };
@@ -233,20 +426,38 @@ export async function getGuildConfig(guild: Guild): Promise<GuildConfig> {
 
 export async function setGuildConfig(
   guild: Guild,
-  updates: { timezone?: string; locale?: string }
+  updates: { timezone?: string; locale?: string; lastRunDate?: string }
 ): Promise<GuildConfig> {
   const { category, logChannel } = await ensureLogChannel(guild);
-  const current = parseConfigFromTopic(logChannel.topic);
+  const parsed = parseConfigFromTopic(logChannel.topic, guild.id);
+  const cached = verifiedGuildCache.get(guild.id);
+  const secretConfigured = Boolean(getSigningSecret());
+
+  const base =
+    secretConfigured &&
+    ((parsed.hasSignature && !parsed.hasValidSignature) || (!parsed.hasSignature && cached?.signed))
+      ? {
+          timezone: cached?.timezone ?? DEFAULT_TIMEZONE,
+          locale: cached?.locale ?? DEFAULT_LOCALE,
+          lastRunDate: cached?.lastRunDate,
+        }
+      : parsed;
 
   const nextTimezone =
     updates.timezone !== undefined
       ? normalizeTimeZone(updates.timezone) ?? DEFAULT_TIMEZONE
-      : current.timezone;
+      : base.timezone;
 
   const nextLocale =
-    updates.locale !== undefined ? normalizeLocale(updates.locale) : current.locale;
+    updates.locale !== undefined ? normalizeLocale(updates.locale) : base.locale;
 
-  const topic = formatConfigTopic(nextTimezone, nextLocale);
+  const nextLastRunDate =
+    updates.lastRunDate !== undefined ? updates.lastRunDate : base.lastRunDate;
+
+  const topic = formatConfigTopic(nextTimezone, nextLocale, {
+    lastRunDate: nextLastRunDate,
+    guildId: guild.id,
+  });
 
   try {
     await logChannel.setTopic(topic, 'Logoto configuration update');
@@ -255,12 +466,49 @@ export async function setGuildConfig(
     throw err;
   }
 
+  verifiedGuildCache.set(guild.id, {
+    categoryId: category.id,
+    logChannelId: logChannel.id,
+    timezone: nextTimezone,
+    locale: nextLocale,
+    lastRunDate: nextLastRunDate,
+    signed: secretConfigured,
+  });
+
   return {
     timezone: nextTimezone,
     locale: nextLocale,
+    lastRunDate: nextLastRunDate,
     category,
     logChannel,
   };
+}
+
+export async function markGuildLastRunDate(
+  guild: Guild,
+  config: GuildConfig,
+  dateKey: string
+): Promise<void> {
+  if (!config.logChannel || !DATE_KEY_REGEX.test(dateKey)) return;
+  if (config.lastRunDate === dateKey) return;
+
+  try {
+    const topic = formatConfigTopic(config.timezone, config.locale, {
+      lastRunDate: dateKey,
+      guildId: guild.id,
+    });
+    await config.logChannel.setTopic(topic, 'Logoto daily schedule checkpoint');
+    verifiedGuildCache.set(guild.id, {
+      categoryId: config.category?.id,
+      logChannelId: config.logChannel.id,
+      timezone: config.timezone,
+      locale: config.locale,
+      lastRunDate: dateKey,
+      signed: Boolean(getSigningSecret()),
+    });
+  } catch (err) {
+    console.warn(`[Logoto] Could not persist lastRunDate on ${guild.id}:`, err);
+  }
 }
 
 export function getLocalDateParts(timezone: string, date: Date = new Date()): LocalDateParts {
