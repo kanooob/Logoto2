@@ -197,7 +197,7 @@ async function applyGuildDailyEvents(
     .setColor(PRIMARY_COLOR)
     .setTitle(t(config.locale, 'logAppliedTitle'))
     .setDescription(lines.join('\n'))
-    .setFooter({ text: dateFooter });
+    .setFooter({ text: `${dateFooter} • ${config.timezone}` });
 
   await sendLogEmbed(guild, summaryEmbed);
 }
