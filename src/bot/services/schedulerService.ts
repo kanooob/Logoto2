@@ -221,11 +221,11 @@ export async function processDailyEvents(
       if (!config.logChannel) continue;
 
       checkedGuilds += 1;
-      const { day, month, hour, minute, dateKey } = getLocalDateParts(config.timezone);
+      const { day, month, hour, dateKey } = getLocalDateParts(config.timezone);
 
       if (!options.force) {
-        // Trigger strictly at midnight (00:00–00:04) in the guild's configured timezone
-        if (hour !== 0 || minute >= 5) {
+        // Trigger only during the midnight hour (00:xx) in the guild's configured timezone
+        if (hour !== 0) {
           continue;
         }
         if (lastTriggeredByGuild.get(guild.id) === dateKey) {
