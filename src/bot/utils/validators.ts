@@ -1,12 +1,18 @@
 import {
+  EmbedBuilder,
   GuildPremiumTier,
   PermissionsBitField,
   type Guild,
   type GuildMember,
   type PermissionsBitField as PermissionsType,
 } from 'discord.js';
-import { t } from '../i18n/index.js';
-import { normalizeTimeZone, parseUtcOffsetMinutes } from '../services/guildConfigService.js';
+import { t, type TranslationKey } from '../i18n/index.js';
+import {
+  findLogChannel,
+  findLogotoCategory,
+  normalizeTimeZone,
+  parseUtcOffsetMinutes,
+} from '../services/guildConfigService.js';
 import type { EventType, SupportedLocale } from '../types.js';
 
 const PRIVATE_IPV4_REGEX = /^(127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[0-1])\.)/;
@@ -109,6 +115,83 @@ export function hasGuildAdminPermission(
     perms.has(PermissionsBitField.Flags.Administrator) ||
     perms.has(PermissionsBitField.Flags.ManageGuild)
   );
+}
+
+const REQUIRED_BOT_PERMISSIONS: ReadonlyArray<{ flag: bigint; labelKey: TranslationKey }> = [
+  { flag: PermissionsBitField.Flags.ManageGuild, labelKey: 'permManageGuild' },
+  { flag: PermissionsBitField.Flags.ManageChannels, labelKey: 'permManageChannels' },
+  { flag: PermissionsBitField.Flags.ViewChannel, labelKey: 'permViewChannel' },
+  { flag: PermissionsBitField.Flags.SendMessages, labelKey: 'permSendMessages' },
+  { flag: PermissionsBitField.Flags.EmbedLinks, labelKey: 'permEmbedLinks' },
+];
+
+export async function checkBotGuildPermissions(
+  guild: Guild,
+  locale: SupportedLocale
+): Promise<{ ok: true } | { ok: false; embed: EmbedBuilder }> {
+  const me = guild.members.me ?? (await guild.members.fetchMe().catch(() => null));
+  if (!me) {
+    return {
+      ok: false,
+      embed: new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle(t(locale, 'botMissingPermsTitle'))
+        .setDescription(t(locale, 'botMissingMember')),
+    };
+  }
+
+  const missingLines: string[] = [];
+  const missingFlagSet = new Set<bigint>();
+
+  for (const perm of REQUIRED_BOT_PERMISSIONS) {
+    if (!me.permissions.has(perm.flag)) {
+      missingLines.push(`• ${t(locale, perm.labelKey)} — *${t(locale, 'permScopeServer')}*`);
+      missingFlagSet.add(perm.flag);
+    }
+  }
+
+  const category = findLogotoCategory(guild);
+  const logChannel = findLogChannel(guild, category);
+  let targetMention = '`Logoto` / `log-logoto`';
+
+  if (category) {
+    const catPerms = category.permissionsFor(me);
+    for (const perm of REQUIRED_BOT_PERMISSIONS) {
+      if (perm.flag === PermissionsBitField.Flags.ManageGuild) continue;
+      if (!catPerms?.has(perm.flag) && !missingFlagSet.has(perm.flag)) {
+        missingLines.push(`• ${t(locale, perm.labelKey)} — **\`${category.name}\`**`);
+      }
+    }
+  }
+
+  if (logChannel) {
+    targetMention = `<#${logChannel.id}>`;
+    const chPerms = logChannel.permissionsFor(me);
+    for (const perm of REQUIRED_BOT_PERMISSIONS) {
+      if (perm.flag === PermissionsBitField.Flags.ManageGuild) continue;
+      if (!chPerms?.has(perm.flag)) {
+        missingLines.push(`• ${t(locale, perm.labelKey)} — <#${logChannel.id}>`);
+      }
+    }
+  }
+
+  if (missingLines.length === 0) {
+    return { ok: true };
+  }
+
+  return {
+    ok: false,
+    embed: new EmbedBuilder()
+      .setColor(0xed4245)
+      .setTitle(t(locale, 'botMissingPermsTitle'))
+      .setDescription(
+        t(locale, 'botMissingPermsDesc', {
+          missing: missingLines.join('\n'),
+          channel: targetMention,
+        })
+      )
+      .setTimestamp(),
+  };
 }
 
 export function formatLocalDateTimeDisplay(

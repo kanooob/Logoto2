@@ -1,9 +1,9 @@
-import { Client, Events, GatewayIntentBits, MessageFlags, REST, Routes } from 'discord.js';
+import { Client, Events, GatewayIntentBits, MessageFlags, Partials, REST, Routes } from 'discord.js';
 import { slashCommandDefinitions } from './commands/definitions.js';
 import { handleAboutCommand, handleHelpCommand, handlePingCommand } from './commands/infoCommands.js';
 import { handleSettingsCommand, handleSettingsInteraction } from './commands/settingsCommand.js';
 import { handleSetupCommand, handleSetupInteraction } from './commands/setupCommand.js';
-import { registerDebugCommands } from './events/debugCommands.js';
+import { handleOwnerPanelInteraction, registerDebugCommands } from './events/debugCommands.js';
 import { registerLifecycleEvents } from './events/lifecycle.js';
 
 async function registerGlobalSlashCommands(token: string, clientId: string): Promise<void> {
@@ -30,8 +30,10 @@ export async function startDiscordBot(): Promise<Client | null> {
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.DirectMessages,
       GatewayIntentBits.MessageContent,
     ],
+    partials: [Partials.Channel],
   });
 
   registerLifecycleEvents(client);
@@ -63,6 +65,9 @@ export async function startDiscordBot(): Promise<Client | null> {
       }
 
       if (interaction.isStringSelectMenu() || interaction.isButton() || interaction.isModalSubmit()) {
+        const handledOwner = await handleOwnerPanelInteraction(interaction);
+        if (handledOwner) return;
+
         const handledSetup = await handleSetupInteraction(interaction);
         if (handledSetup) return;
 

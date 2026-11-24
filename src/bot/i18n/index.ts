@@ -83,6 +83,15 @@ export function getMonthName(locale: SupportedLocale, month: number): string {
 const MESSAGES = {
   fr: {
     noPermission: "Vous devez être propriétaire du serveur ou disposer de la permission **Administrateur** ou **Gérer le serveur** pour utiliser cette commande.",
+    botMissingPermsTitle: "Permissions du bot manquantes",
+    botMissingPermsDesc: "Logoto n'a pas toutes les permissions nécessaires pour fonctionner correctement sur ce serveur.\n\n**Permissions manquantes :**\n{missing}\n\nVeuillez accorder ces permissions au rôle du bot (ou dans {channel}) puis réessayez.",
+    botMissingMember: "Impossible de vérifier les permissions du bot sur ce serveur. Veuillez réessayer.",
+    permManageGuild: "Gérer le serveur (`ManageGuild`)",
+    permManageChannels: "Gérer les salons (`ManageChannels`)",
+    permViewChannel: "Voir les salons (`ViewChannel`)",
+    permSendMessages: "Envoyer des messages (`SendMessages`)",
+    permEmbedLinks: "Intégrer des liens (`EmbedLinks`)",
+    permScopeServer: "Serveur",
     sessionExpired: "Session expirée ou invalide. Relancez la commande pour continuer.",
     back: "Retour",
     cancel: "Annuler",
@@ -251,10 +260,18 @@ const MESSAGES = {
     welcomeDesc:
       "Logoto permet de programmer automatiquement des changements de **logo**, **nom**, **bannière** et **image d'invitation** selon votre fuseau horaire.\n\n" +
       "Un administrateur ou propriétaire du serveur peut lancer **`/setup`** pour initialiser la configuration.",
-    welcomeDmContent: "Bonjour ! Logoto vient d'être ajouté sur **{guild}**. Vous pouvez lancer `/setup` ici : {link}",
   },
   en: {
     noPermission: "You must be the server owner or have **Administrator** or **Manage Server** permission to use this command.",
+    botMissingPermsTitle: "Missing Bot Permissions",
+    botMissingPermsDesc: "Logoto does not have all the required permissions to operate properly on this server.\n\n**Missing permissions:**\n{missing}\n\nPlease grant these permissions to the bot's role (or in {channel}) and try again.",
+    botMissingMember: "Unable to verify bot permissions on this server. Please try again.",
+    permManageGuild: "Manage Server (`ManageGuild`)",
+    permManageChannels: "Manage Channels (`ManageChannels`)",
+    permViewChannel: "View Channels (`ViewChannel`)",
+    permSendMessages: "Send Messages (`SendMessages`)",
+    permEmbedLinks: "Embed Links (`EmbedLinks`)",
+    permScopeServer: "Server",
     sessionExpired: "Session expired or invalid. Please run the command again.",
     back: "Back",
     cancel: "Cancel",
@@ -423,7 +440,6 @@ const MESSAGES = {
     welcomeDesc:
       "Logoto lets you automatically schedule **logo**, **name**, **banner**, and **invite splash** updates in your timezone.\n\n" +
       "A server owner or administrator can run **`/setup`** to initialize the configuration.",
-    welcomeDmContent: "Hello! Logoto was just added to **{guild}**. You can run `/setup` here: {link}",
   },
 } as const;
 

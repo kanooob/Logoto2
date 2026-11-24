@@ -29,7 +29,11 @@ import {
   setGuildConfig,
 } from '../services/guildConfigService.js';
 import { PRIMARY_COLOR, type SupportedLocale } from '../types.js';
-import { formatLocalDateTimeDisplay, hasGuildAdminPermission } from '../utils/validators.js';
+import {
+  checkBotGuildPermissions,
+  formatLocalDateTimeDisplay,
+  hasGuildAdminPermission,
+} from '../utils/validators.js';
 
 function buildLangStepPayload(locale: SupportedLocale) {
   const embed = new EmbedBuilder()
@@ -256,6 +260,15 @@ export async function handleSetupCommand(interaction: ChatInputCommandInteractio
     return;
   }
 
+  const botPerms = await checkBotGuildPermissions(interaction.guild, initialLocale);
+  if (!botPerms.ok) {
+    await interaction.reply({
+      embeds: [botPerms.embed],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
   setSetupSession(interaction.guild.id, interaction.user.id, { locale: initialLocale });
   const payload = buildLangStepPayload(initialLocale);
   await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
@@ -273,6 +286,15 @@ export async function handleSetupInteraction(
   if (!hasGuildAdminPermission(interaction.guild, interaction.user.id, interaction.memberPermissions)) {
     await interaction.reply({
       content: t(fallbackLocale, 'noPermission'),
+      flags: MessageFlags.Ephemeral,
+    });
+    return true;
+  }
+
+  const botPerms = await checkBotGuildPermissions(interaction.guild, fallbackLocale);
+  if (!botPerms.ok) {
+    await interaction.reply({
+      embeds: [botPerms.embed],
       flags: MessageFlags.Ephemeral,
     });
     return true;

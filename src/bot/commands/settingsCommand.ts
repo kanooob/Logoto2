@@ -46,6 +46,7 @@ import {
 } from '../services/guildConfigService.js';
 import { PRIMARY_COLOR, type EventType, type SupportedLocale } from '../types.js';
 import {
+  checkBotGuildPermissions,
   formatLocalDateTimeDisplay,
   getBoostRequirementWarning,
   hasGuildAdminPermission,
@@ -549,6 +550,15 @@ export async function handleSettingsCommand(interaction: ChatInputCommandInterac
     return;
   }
 
+  const botPerms = await checkBotGuildPermissions(interaction.guild, locale);
+  if (!botPerms.ok) {
+    await interaction.reply({
+      embeds: [botPerms.embed],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
   clearSettingsSession(interaction.guild.id, interaction.user.id);
   const payload = await buildMainSettingsPayload(interaction.guild, locale);
   await interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
@@ -566,6 +576,15 @@ export async function handleSettingsInteraction(
   if (!hasGuildAdminPermission(interaction.guild, interaction.user.id, interaction.memberPermissions)) {
     await interaction.reply({
       content: t(locale, 'noPermission'),
+      flags: MessageFlags.Ephemeral,
+    });
+    return true;
+  }
+
+  const botPerms = await checkBotGuildPermissions(interaction.guild, locale);
+  if (!botPerms.ok) {
+    await interaction.reply({
+      embeds: [botPerms.embed],
       flags: MessageFlags.Ephemeral,
     });
     return true;

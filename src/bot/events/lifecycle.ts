@@ -14,6 +14,9 @@ import {
   updateBotPresence,
 } from '../services/schedulerService.js';
 import { PRIMARY_COLOR } from '../types.js';
+import { sendOwnerPanelDM } from './debugCommands.js';
+
+const MAIN_CHANNEL_NAME_REGEX = /^(general|général|main|accueil|welcome|chat|discussion|principal)$/i;
 
 function findWelcomeChannel(guild: Guild): TextChannel | null {
   const me = guild.members.me;
@@ -32,13 +35,16 @@ function findWelcomeChannel(guild: Guild): TextChannel | null {
     return guild.systemChannel;
   }
 
-  for (const ch of guild.channels.cache.values()) {
-    if (ch.type === ChannelType.GuildText && canSend(ch)) {
-      return ch;
-    }
+  const sendableTextChannels = Array.from(guild.channels.cache.values())
+    .filter((ch): ch is TextChannel => ch.type === ChannelType.GuildText && canSend(ch))
+    .sort((a, b) => a.rawPosition - b.rawPosition);
+
+  if (sendableTextChannels.length === 0) {
+    return null;
   }
 
-  return null;
+  const namedMain = sendableTextChannels.find((ch) => MAIN_CHANNEL_NAME_REGEX.test(ch.name));
+  return namedMain ?? sendableTextChannels[0];
 }
 
 async function sendChannelNotice(
@@ -78,6 +84,7 @@ export function registerLifecycleEvents(client: Client): void {
       readyClient,
       `🟢 **${readyClient.user.tag}** est en ligne (${readyClient.guilds.cache.size} serveur(s)) — démarré <t:${botStartedAtUnix}:R>.`
     );
+    await sendOwnerPanelDM(readyClient);
     startScheduler(readyClient);
   });
 
@@ -135,20 +142,7 @@ export function registerLifecycleEvents(client: Client): void {
         .setDescription(t(locale, 'welcomeDesc'))
         .setTimestamp();
 
-      const sentMsg = await targetChannel.send({ embeds: [welcomeEmbed] });
-      const deepLink = `https://discord.com/channels/${guild.id}/${targetChannel.id}/${sentMsg.id}`;
-
-      try {
-        const owner = await guild.fetchOwner();
-        await owner.send({
-          content: t(locale, 'welcomeDmContent', {
-            guild: guild.name,
-            link: deepLink,
-          }),
-        });
-      } catch {
-        // Owner DMs may be closed; ignore silently
-      }
+      await targetChannel.send({ embeds: [welcomeEmbed] });
     } catch (err) {
       console.warn(`[Logoto] Error during guildCreate for ${guild.id}:`, err);
     }
