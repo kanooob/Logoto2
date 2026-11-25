@@ -17,7 +17,11 @@ export function normalizeSiteLocale(input?: string | null): SiteLocale {
 }
 
 export function normalizeDomainOrigin(raw?: string | null): string {
-  const trimmed = raw?.trim().replace(/\/+$/, '') ?? '';
+  const trimmed =
+    raw
+      ?.trim()
+      .replace(/^['"]+|['"]+$/g, '')
+      .replace(/\/+$/, '') ?? '';
   if (!trimmed || /[\s\\]/.test(trimmed)) return '';
 
   const isLocalHost =
@@ -42,6 +46,10 @@ export function normalizeDomainOrigin(raw?: string | null): string {
   }
 }
 
+export function getExplicitDomainOrigin(): string {
+  return normalizeDomainOrigin(process.env.DOMAIN);
+}
+
 export function getConfiguredSiteOrigin(): string {
   const candidates = [
     process.env.DOMAIN,
@@ -56,23 +64,83 @@ export function getConfiguredSiteOrigin(): string {
   return '';
 }
 
+function getHeaderHostOrigin(req: Request): string {
+  const rawHost = String(req.headers['x-forwarded-host'] ?? req.get('host') ?? '')
+    .split(',')[0]
+    .trim();
+  if (!rawHost) return '';
+
+  const isLocal = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(rawHost);
+  const forwardedProto = String(req.headers['x-forwarded-proto'] ?? '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+
+  let proto: 'http' | 'https';
+  if (forwardedProto === 'https' || forwardedProto === 'http') {
+    proto = forwardedProto;
+  } else if (isLocal) {
+    proto = req.protocol === 'https' ? 'https' : 'http';
+  } else {
+    proto = 'https';
+  }
+
+  return normalizeDomainOrigin(`${proto}://${rawHost}`);
+}
+
+function isTrustedDynamicOrigin(candidateOrigin: string, req: Request): boolean {
+  if (!candidateOrigin) return false;
+  try {
+    const parsed = new URL(candidateOrigin);
+    const appUrlOrigin = normalizeDomainOrigin(process.env.APP_URL);
+    if (appUrlOrigin && parsed.origin === appUrlOrigin) return true;
+
+    const headerHostOrigin = getHeaderHostOrigin(req);
+    if (headerHostOrigin && parsed.origin === headerHostOrigin) return true;
+
+    // Allow AI Studio preview & shared containers (.run.app) over HTTPS
+    if (parsed.protocol === 'https:' && parsed.hostname.endsWith('.run.app')) {
+      return true;
+    }
+
+    // Allow localhost in development
+    if (
+      parsed.hostname === 'localhost' ||
+      parsed.hostname === '127.0.0.1'
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 export function getSiteOriginFromRequest(req?: Request): string {
+  const explicitDomain = getExplicitDomainOrigin();
+  if (explicitDomain) return explicitDomain;
+
+  if (req) {
+    const queryOriginRaw =
+      typeof req.query?.origin === 'string' ? req.query.origin : undefined;
+    const queryOrigin = normalizeDomainOrigin(queryOriginRaw);
+    if (queryOrigin && isTrustedDynamicOrigin(queryOrigin, req)) {
+      return queryOrigin;
+    }
+
+    const headerOriginRaw =
+      typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+    const headerOrigin = normalizeDomainOrigin(headerOriginRaw);
+    if (headerOrigin && isTrustedDynamicOrigin(headerOrigin, req)) {
+      return headerOrigin;
+    }
+  }
+
   const configured = getConfiguredSiteOrigin();
   if (configured) return configured;
 
   if (!req) return '';
-
-  const rawProto = String(req.headers['x-forwarded-proto'] ?? req.protocol ?? 'http')
-    .split(',')[0]
-    .trim()
-    .toLowerCase();
-  const proto = rawProto === 'https' ? 'https' : 'http';
-
-  const rawHost = String(req.headers['x-forwarded-host'] ?? req.get('host') ?? 'localhost:3000')
-    .split(',')[0]
-    .trim();
-
-  return normalizeDomainOrigin(`${proto}://${rawHost}`);
+  return getHeaderHostOrigin(req) || 'http://localhost:3000';
 }
 
 export function buildSiteUrls(origin: string, locale: SiteLocale = 'fr'): SiteUrls {

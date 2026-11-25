@@ -109,6 +109,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   const [user, setUser] = useState<DiscordUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [copiedRedirectUri, setCopiedRedirectUri] = useState(false);
 
   // Guilds & Selected Guild state
   const [guildsLoading, setGuildsLoading] = useState(false);
@@ -234,8 +235,11 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
     let active = true;
     const init = async () => {
       try {
+        const originParam = encodeURIComponent(window.location.origin);
         const [cfgRes, meRes] = await Promise.all([
-          fetch(`/api/auth/config?locale=${encodeURIComponent(locale)}`, { credentials: 'include' }),
+          fetch(`/api/auth/config?locale=${encodeURIComponent(locale)}&origin=${originParam}`, {
+            credentials: 'include',
+          }),
           fetch('/api/auth/me', { credentials: 'include' }),
         ]);
         if (!active) return;
@@ -334,9 +338,13 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   const handleDiscordLogin = async () => {
     setAuthError(null);
     try {
-      const res = await fetch(`/api/auth/discord/url?locale=${encodeURIComponent(locale)}`, {
-        credentials: 'include',
-      });
+      const originParam = encodeURIComponent(window.location.origin);
+      const res = await fetch(
+        `/api/auth/discord/url?locale=${encodeURIComponent(locale)}&origin=${originParam}`,
+        {
+          credentials: 'include',
+        }
+      );
       const data = (await res.json()) as { url?: string; error?: string };
       if (!res.ok || !data.url) {
         setAuthError(data.error || (isFr ? 'OAuth Discord indisponible.' : 'Discord OAuth unavailable.'));
@@ -719,7 +727,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
               </div>
             </div>
           ) : (
-            <div className="pt-2">
+            <div className="pt-2 space-y-5">
               <button
                 type="button"
                 onClick={handleDiscordLogin}
@@ -730,6 +738,43 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 </svg>
                 <span>{isFr ? 'Se connecter avec Discord' : 'Sign in with Discord'}</span>
               </button>
+
+              {authConfig?.redirectUri && (
+                <div className="text-left rounded-lg bg-[#292b2f] border border-white/10 p-4 space-y-2">
+                  <p className="text-xs text-[#b9bbbe]">
+                    {isFr
+                      ? 'URL de redirection OAuth2 (Redirect URI) à ajouter dans Discord Developer Portal → OAuth2 → Redirects :'
+                      : 'OAuth2 Redirect URI to add in Discord Developer Portal → OAuth2 → Redirects:'}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 font-mono text-xs bg-[#202225] text-[#a3ab72] px-3 py-2 rounded break-all select-all">
+                      {authConfig.redirectUri}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(authConfig.redirectUri).then(() => {
+                          setCopiedRedirectUri(true);
+                          window.setTimeout(() => setCopiedRedirectUri(false), 1800);
+                        }).catch(() => {});
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded bg-[#36393f] hover:bg-[#40444b] border border-white/10 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer shrink-0"
+                    >
+                      {copiedRedirectUri ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-[#43b581]" />
+                          <span>{isFr ? 'Copié' : 'Copied'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>{isFr ? 'Copier' : 'Copy'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
