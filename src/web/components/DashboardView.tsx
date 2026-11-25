@@ -39,6 +39,7 @@ interface AuthConfig {
   oauthConfigured: boolean;
   botOnline: boolean;
   clientId: string;
+  siteOrigin?: string;
   redirectUri: string;
 }
 
@@ -234,7 +235,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
     const init = async () => {
       try {
         const [cfgRes, meRes] = await Promise.all([
-          fetch('/api/auth/config', { credentials: 'include' }),
+          fetch(`/api/auth/config?locale=${encodeURIComponent(locale)}`, { credentials: 'include' }),
           fetch('/api/auth/me', { credentials: 'include' }),
         ]);
         if (!active) return;
@@ -264,8 +265,10 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
       const origin = event.origin;
+      const configuredOrigin = authConfig?.siteOrigin || '';
       const isAllowedOrigin =
         origin === window.location.origin ||
+        (configuredOrigin && origin === configuredOrigin) ||
         origin.endsWith('.run.app') ||
         origin.includes('localhost');
       if (!isAllowedOrigin) return;
@@ -313,7 +316,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [isFr, loadGuilds]);
+  }, [authConfig?.siteOrigin, isFr, loadGuilds]);
 
   const selectedGuildSummary = useMemo(
     () => guilds.find((g) => g.id === selectedGuildId) ?? null,
@@ -331,7 +334,9 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   const handleDiscordLogin = async () => {
     setAuthError(null);
     try {
-      const res = await fetch('/api/auth/discord/url', { credentials: 'include' });
+      const res = await fetch(`/api/auth/discord/url?locale=${encodeURIComponent(locale)}`, {
+        credentials: 'include',
+      });
       const data = (await res.json()) as { url?: string; error?: string };
       if (!res.ok || !data.url) {
         setAuthError(data.error || (isFr ? 'OAuth Discord indisponible.' : 'Discord OAuth unavailable.'));

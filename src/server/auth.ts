@@ -1,6 +1,12 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Client } from 'discord.js';
 import type { Express, NextFunction, Request, Response } from 'express';
+import {
+  buildSiteUrls,
+  getSiteOriginFromRequest,
+  normalizeSiteLocale,
+  type SiteLocale,
+} from './siteDomain.js';
 
 export interface DiscordUserProfile {
   id: string;
@@ -41,7 +47,10 @@ const RUNTIME_SESSION_SECRET =
   process.env.CONFIG_SIGNING_SECRET?.trim() ||
   randomBytes(32).toString('hex');
 
-const pendingStates = new Map<string, { redirectUri: string; expiresAt: number }>();
+const pendingStates = new Map<
+  string,
+  { redirectUri: string; locale: SiteLocale; expiresAt: number }
+>();
 const pendingExchanges = new Map<string, { sessionId: string; expiresAt: number }>();
 const sessions = new Map<string, DiscordSession>();
 
@@ -136,21 +145,11 @@ function extractSessionFromRequest(req: Request): DiscordSession | null {
 }
 
 function getAppBaseUrl(req: Request): string {
-  const envUrl = process.env.APP_URL?.trim();
-  if (envUrl) {
-    return envUrl.replace(/\/+$/, '');
-  }
-  const forwardedProto = String(req.headers['x-forwarded-proto'] ?? req.protocol ?? 'http')
-    .split(',')[0]
-    .trim();
-  const forwardedHost = String(req.headers['x-forwarded-host'] ?? req.get('host') ?? 'localhost:3000')
-    .split(',')[0]
-    .trim();
-  return `${forwardedProto}://${forwardedHost}`;
+  return getSiteOriginFromRequest(req);
 }
 
 export function getRedirectUri(req: Request): string {
-  return `${getAppBaseUrl(req)}/auth/callback`;
+  return buildSiteUrls(getAppBaseUrl(req)).oauthCallback;
 }
 
 function setSessionCookie(res: Response, signedToken: string): void {
@@ -256,12 +255,19 @@ export function registerDiscordAuthRoutes(
     const clientId = process.env.CLIENT_ID?.trim() || client?.user?.id || '';
     const clientSecret = process.env.CLIENT_SECRET?.trim() || '';
     const oauthConfigured = Boolean(clientId && clientSecret);
+    const locale = normalizeSiteLocale(
+      typeof req.query.locale === 'string' ? req.query.locale : 'fr'
+    );
+    const siteOrigin = getAppBaseUrl(req);
+    const urls = buildSiteUrls(siteOrigin, locale);
 
     res.json({
       oauthConfigured,
       botOnline: Boolean(client?.isReady()),
       clientId: clientId || '1431383390162124920',
-      redirectUri: getRedirectUri(req),
+      siteOrigin,
+      urls,
+      redirectUri: urls.oauthCallback,
     });
   });
 
@@ -278,10 +284,14 @@ export function registerDiscordAuthRoutes(
       return;
     }
 
+    const locale = normalizeSiteLocale(
+      typeof req.query.locale === 'string' ? req.query.locale : 'fr'
+    );
     const redirectUri = getRedirectUri(req);
     const state = randomBytes(24).toString('base64url');
     pendingStates.set(state, {
       redirectUri,
+      locale,
       expiresAt: Date.now() + STATE_TTL_MS,
     });
 
@@ -304,16 +314,20 @@ export function registerDiscordAuthRoutes(
     const state = typeof req.query.state === 'string' ? req.query.state : '';
     const errorParam = typeof req.query.error === 'string' ? req.query.error : '';
 
-    if (errorParam) {
-      res.status(400).send(`<!doctype html><html><body style="background:#36393f;color:#F2F3F5;font-family:sans-serif;padding:32px;"><p>Connexion Discord annulée.</p><script>if(window.opener){window.opener.postMessage({type:'OAUTH_AUTH_ERROR'},'*');window.close();}</script></body></html>`);
-      return;
-    }
-
     const pending = state ? pendingStates.get(state) : undefined;
     if (state) pendingStates.delete(state);
 
+    const targetLocale: SiteLocale = pending?.locale ?? 'fr';
+    const dashboardUrl = buildSiteUrls(getAppBaseUrl(req), targetLocale).dashboard;
+    const safeDashboardUrlJson = JSON.stringify(dashboardUrl).replace(/</g, '\\u003c');
+
+    if (errorParam) {
+      res.status(400).send(`<!doctype html><html><body style="background:#36393f;color:#F2F3F5;font-family:sans-serif;padding:32px;"><p>Connexion Discord annulée.</p><script>if(window.opener){window.opener.postMessage({type:'OAUTH_AUTH_ERROR'},'*');window.close();}else{window.location.href=${safeDashboardUrlJson};}</script></body></html>`);
+      return;
+    }
+
     if (!code || !pending || pending.expiresAt <= Date.now()) {
-      res.status(400).send(`<!doctype html><html><body style="background:#36393f;color:#F2F3F5;font-family:sans-serif;padding:32px;"><p>Session OAuth expirée ou invalide. Veuillez réessayer.</p></body></html>`);
+      res.status(400).send(`<!doctype html><html><body style="background:#36393f;color:#F2F3F5;font-family:sans-serif;padding:32px;"><p>Session OAuth expirée ou invalide. Veuillez réessayer.</p><script>if(!window.opener){setTimeout(function(){window.location.href=${safeDashboardUrlJson};},1500);}</script></body></html>`);
       return;
     }
 
@@ -377,18 +391,19 @@ export function registerDiscordAuthRoutes(
       const safeExchangeJson = JSON.stringify(exchangeCode).replace(/</g, '\\u003c');
 
       res.status(200).send(`<!doctype html>
-<html lang="fr">
+<html lang="${targetLocale}">
   <head><meta charset="utf-8"><title>Connexion Discord — Logoto</title></head>
   <body style="background:#36393f;color:#F2F3F5;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;">
-    <p>Connexion réussie. Cette fenêtre va se fermer automatiquement…</p>
+    <p>Connexion réussie. Redirection en cours…</p>
     <script>
       (function() {
         var exchangeCode = ${safeExchangeJson};
+        var dashboardUrl = ${safeDashboardUrlJson};
         if (window.opener) {
-          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', exchangeCode: exchangeCode }, '*');
+          window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', exchangeCode: exchangeCode, redirectTo: dashboardUrl }, '*');
           window.close();
         } else {
-          window.location.href = '/fr/dashboard';
+          window.location.href = dashboardUrl;
         }
       })();
     </script>

@@ -8,7 +8,8 @@ import {
   PermissionsBitField,
   type ChatInputCommandInteraction,
 } from 'discord.js';
-import { normalizeLocale, t, type TranslationKey } from '../i18n/index.js';
+import { buildSiteUrls, getConfiguredSiteOrigin } from '../../server/siteDomain.js';
+import { normalizeLocale, t } from '../i18n/index.js';
 import { getGuildConfig } from '../services/guildConfigService.js';
 import { botStartedAtUnix } from '../services/schedulerService.js';
 import { PRIMARY_COLOR, type SupportedLocale } from '../types.js';
@@ -51,7 +52,25 @@ export async function handleHelpCommand(interaction: ChatInputCommandInteraction
     )
     .setTimestamp();
 
-  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+  const components: ActionRowBuilder<ButtonBuilder>[] = [];
+  const siteOrigin = getConfiguredSiteOrigin();
+  if (siteOrigin) {
+    const urls = buildSiteUrls(siteOrigin, locale);
+    components.push(
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setLabel(t(locale, 'aboutDocsLabel'))
+          .setURL(urls.docs)
+          .setStyle(ButtonStyle.Link),
+        new ButtonBuilder()
+          .setLabel(t(locale, 'aboutDashboardLabel'))
+          .setURL(urls.dashboard)
+          .setStyle(ButtonStyle.Link)
+      )
+    );
+  }
+
+  await interaction.reply({ embeds: [embed], components, flags: MessageFlags.Ephemeral });
 }
 
 export async function handleAboutCommand(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -94,35 +113,45 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
     linkItems.push({ label: t(locale, 'aboutInviteLabel'), url: inviteUrl });
   }
 
-  const envLinks: Array<{ candidates: Array<string | undefined>; labelKey: TranslationKey }> = [
-    {
-      candidates: [process.env.WEBSITE_URL, process.env.SITE_URL],
-      labelKey: 'aboutWebsiteLabel',
-    },
-    {
-      candidates: [
-        process.env.SUPPORT_INVITE_URL,
-        process.env.SUPPORT_URL,
-        process.env.SUPPORT_SERVER_URL,
-      ],
-      labelKey: 'aboutSupportLabel',
-    },
-    {
-      candidates: [process.env.TERMS_URL, process.env.TOS_URL, process.env.CGU_URL],
-      labelKey: 'aboutTermsLabel',
-    },
-    {
-      candidates: [process.env.PRIVACY_URL, process.env.CONFIDENTIALITE_URL],
-      labelKey: 'aboutPrivacyLabel',
-    },
-  ];
+  const siteOrigin = getConfiguredSiteOrigin();
+  const siteUrls = siteOrigin ? buildSiteUrls(siteOrigin, locale) : null;
 
-  for (const item of envLinks) {
-    const raw = item.candidates.find((v) => v && v.trim().length > 0);
-    const normalized = normalizeExternalUrl(raw);
-    if (normalized) {
-      linkItems.push({ label: t(locale, item.labelKey), url: normalized });
-    }
+  const websiteUrl =
+    siteUrls?.home ||
+    normalizeExternalUrl(process.env.WEBSITE_URL) ||
+    normalizeExternalUrl(process.env.SITE_URL);
+  if (websiteUrl) {
+    linkItems.push({ label: t(locale, 'aboutWebsiteLabel'), url: websiteUrl });
+  }
+
+  if (siteUrls) {
+    linkItems.push({ label: t(locale, 'aboutDashboardLabel'), url: siteUrls.dashboard });
+    linkItems.push({ label: t(locale, 'aboutDocsLabel'), url: siteUrls.docs });
+  }
+
+  const supportUrl =
+    normalizeExternalUrl(process.env.SUPPORT_INVITE_URL) ||
+    normalizeExternalUrl(process.env.SUPPORT_URL) ||
+    normalizeExternalUrl(process.env.SUPPORT_SERVER_URL);
+  if (supportUrl) {
+    linkItems.push({ label: t(locale, 'aboutSupportLabel'), url: supportUrl });
+  }
+
+  const termsUrl =
+    siteUrls?.cgu ||
+    normalizeExternalUrl(process.env.TERMS_URL) ||
+    normalizeExternalUrl(process.env.TOS_URL) ||
+    normalizeExternalUrl(process.env.CGU_URL);
+  if (termsUrl) {
+    linkItems.push({ label: t(locale, 'aboutTermsLabel'), url: termsUrl });
+  }
+
+  const privacyUrl =
+    siteUrls?.privacy ||
+    normalizeExternalUrl(process.env.PRIVACY_URL) ||
+    normalizeExternalUrl(process.env.CONFIDENTIALITE_URL);
+  if (privacyUrl) {
+    linkItems.push({ label: t(locale, 'aboutPrivacyLabel'), url: privacyUrl });
   }
 
   const embed = new EmbedBuilder()
@@ -140,9 +169,10 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
   }
 
   const components: ActionRowBuilder<ButtonBuilder>[] = [];
-  if (linkItems.length > 0) {
+  for (let i = 0; i < linkItems.length && components.length < 5; i += 5) {
+    const chunk = linkItems.slice(i, i + 5);
     const linkRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      linkItems.slice(0, 5).map((item) =>
+      chunk.map((item) =>
         new ButtonBuilder()
           .setLabel(item.label)
           .setURL(item.url)

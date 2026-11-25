@@ -4,9 +4,10 @@ import type { WebLocale } from '../types';
 interface LegalViewProps {
   locale: WebLocale;
   onLocaleChange: (locale: WebLocale) => void;
+  onSelectSection?: (hash: '#tos' | '#privacy') => void;
 }
 
-export function LegalView({ locale, onLocaleChange }: LegalViewProps) {
+export function LegalView({ locale, onLocaleChange, onSelectSection }: LegalViewProps) {
   const isFr = locale === 'fr';
   const copy = UI_COPY[locale].legal;
 
@@ -50,12 +51,24 @@ export function LegalView({ locale, onLocaleChange }: LegalViewProps) {
             >
               <a
                 href="#tos"
+                onClick={(e) => {
+                  if (onSelectSection) {
+                    e.preventDefault();
+                    onSelectSection('#tos');
+                  }
+                }}
                 className="px-3 py-2 rounded-lg text-[15px] font-bold text-[#F2F3F5]/80 hover:text-[#a3ab72] hover:bg-white/5 transition-colors whitespace-nowrap shrink-0"
               >
                 {copy.tosLink}
               </a>
               <a
                 href="#privacy"
+                onClick={(e) => {
+                  if (onSelectSection) {
+                    e.preventDefault();
+                    onSelectSection('#privacy');
+                  }
+                }}
                 className="px-3 py-2 rounded-lg text-[15px] font-bold text-[#F2F3F5]/80 hover:text-[#a3ab72] hover:bg-white/5 transition-colors whitespace-nowrap shrink-0"
               >
                 {copy.privacyLink}

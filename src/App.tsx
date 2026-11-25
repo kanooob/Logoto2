@@ -14,36 +14,48 @@ import type {
   WebLocale,
 } from './web/types';
 
-function parseLocation(pathname: string): { locale: WebLocale; route: PageRoute } {
+function parseLocation(
+  pathname: string,
+  hash?: string
+): { locale: WebLocale; route: PageRoute; hash?: string } {
   const clean = pathname.toLowerCase().replace(/\/+$/, '') || '/';
-  const locale: WebLocale = clean.startsWith('/en') ? 'en' : 'fr';
+  const locale: WebLocale = clean === '/en' || clean.startsWith('/en/') ? 'en' : 'fr';
 
   if (clean.endsWith('/dashboard') || clean.endsWith('/settings')) {
     return { locale, route: 'dashboard' };
   }
-  if (clean.endsWith('/help')) {
+  if (clean.endsWith('/docs') || clean.endsWith('/help')) {
     return { locale, route: 'docs' };
   }
+  if (clean.endsWith('/cgu') || clean.endsWith('/tos') || clean.endsWith('/terms')) {
+    return { locale, route: 'legal', hash: '#tos' };
+  }
+  if (clean.endsWith('/privacy') || clean.endsWith('/confidentialite')) {
+    return { locale, route: 'legal', hash: '#privacy' };
+  }
   if (clean.endsWith('/legal')) {
-    return { locale, route: 'legal' };
+    return { locale, route: 'legal', hash: hash || undefined };
   }
   return { locale, route: 'home' };
 }
 
 function buildPath(locale: WebLocale, route: PageRoute, hash?: string): string {
-  const base =
-    route === 'dashboard'
-      ? `/${locale}/dashboard`
-      : route === 'docs'
-        ? `/${locale}/help`
-        : route === 'legal'
-          ? `/${locale}/legal`
-          : `/${locale}`;
-  return hash ? `${base}${hash}` : base;
+  if (route === 'dashboard') {
+    return `/${locale}/dashboard`;
+  }
+  if (route === 'docs') {
+    return `/${locale}/docs`;
+  }
+  if (route === 'legal') {
+    if (hash === '#privacy') return `/${locale}/privacy`;
+    if (hash === '#tos') return `/${locale}/cgu`;
+    return hash ? `/${locale}/legal${hash}` : `/${locale}/cgu`;
+  }
+  return `/${locale}`;
 }
 
 export default function App() {
-  const initial = parseLocation(window.location.pathname);
+  const initial = parseLocation(window.location.pathname, window.location.hash);
   const [locale, setLocale] = useState<WebLocale>(initial.locale);
   const [route, setRoute] = useState<PageRoute>(initial.route);
   const [docSection, setDocSection] = useState<DocSectionId>('setup');
@@ -56,10 +68,27 @@ export default function App() {
   }, [locale]);
 
   useEffect(() => {
+    if (initial.hash) {
+      window.requestAnimationFrame(() => {
+        const el = document.querySelector(initial.hash!);
+        el?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
+    // Run once on initial mount for deep links like /fr/privacy or /fr/cgu
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     const onPopState = () => {
-      const parsed = parseLocation(window.location.pathname);
+      const parsed = parseLocation(window.location.pathname, window.location.hash);
       setLocale(parsed.locale);
       setRoute(parsed.route);
+      if (parsed.hash) {
+        window.requestAnimationFrame(() => {
+          const el = document.querySelector(parsed.hash!);
+          el?.scrollIntoView({ behavior: 'smooth' });
+        });
+      }
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -124,7 +153,8 @@ export default function App() {
   const handleLocaleChange = useCallback(
     (nextLocale: WebLocale) => {
       setLocale(nextLocale);
-      const nextUrl = buildPath(nextLocale, route, window.location.hash || undefined);
+      const parsed = parseLocation(window.location.pathname, window.location.hash);
+      const nextUrl = buildPath(nextLocale, route, parsed.hash);
       window.history.pushState(null, '', nextUrl);
     },
     [route]
@@ -165,7 +195,11 @@ export default function App() {
           />
         )}
         {route === 'legal' && (
-          <LegalView locale={locale} onLocaleChange={handleLocaleChange} />
+          <LegalView
+            locale={locale}
+            onLocaleChange={handleLocaleChange}
+            onSelectSection={(hash) => navigate('legal', hash)}
+          />
         )}
       </div>
 
