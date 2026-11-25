@@ -12,17 +12,17 @@ export function Footer({ locale, onLocaleChange, onNavigate }: FooterProps) {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="bg-[#2f3136] border-t border-white/[0.06] mt-auto">
-      <div className="max-w-[1400px] mx-auto px-6 lg:px-[50px] py-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-[14px] text-[#F2F3F5]/70">
-        <p className="tabular-nums">
+    <footer className="bg-[#1e1f22] border-t border-white/[0.08] mt-auto">
+      <div className="max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-10 py-6 flex flex-col sm:flex-row items-center justify-between gap-5 text-sm text-[#b9bbbe]">
+        <p className="tabular-nums text-center sm:text-left">
           &copy; {year} {copy.rights}
         </p>
 
-        <div className="flex flex-wrap items-center justify-center gap-6">
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
           <div
             role="group"
             aria-label={locale === 'fr' ? 'Sélection de la langue' : 'Language selector'}
-            className="inline-flex items-center p-0.5 rounded-lg bg-[#36393f] border border-white/10"
+            className="inline-flex items-center p-0.5 rounded-lg bg-[#2b2d31] border border-white/10"
           >
             <button
               type="button"
@@ -52,7 +52,7 @@ export function Footer({ locale, onLocaleChange, onNavigate }: FooterProps) {
             href={EXTERNAL_LINKS.betterUptime}
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-[#a3ab72] transition-colors whitespace-nowrap shrink-0"
+            className="hover:text-[#a3ab72] transition-colors whitespace-nowrap shrink-0 py-1"
           >
             {copy.status}
           </a>
@@ -60,21 +60,21 @@ export function Footer({ locale, onLocaleChange, onNavigate }: FooterProps) {
             href={EXTERNAL_LINKS.githubRepo}
             target="_blank"
             rel="noopener noreferrer"
-            className="hover:text-[#a3ab72] transition-colors whitespace-nowrap shrink-0"
+            className="hover:text-[#a3ab72] transition-colors whitespace-nowrap shrink-0 py-1"
           >
             {copy.github}
           </a>
           <button
             type="button"
             onClick={() => onNavigate('legal', '#tos')}
-            className="hover:text-[#a3ab72] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            className="hover:text-[#a3ab72] transition-colors cursor-pointer whitespace-nowrap shrink-0 py-1"
           >
             {copy.tos}
           </button>
           <button
             type="button"
             onClick={() => onNavigate('legal', '#privacy')}
-            className="hover:text-[#a3ab72] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            className="hover:text-[#a3ab72] transition-colors cursor-pointer whitespace-nowrap shrink-0 py-1"
           >
             {copy.privacy}
           </button>

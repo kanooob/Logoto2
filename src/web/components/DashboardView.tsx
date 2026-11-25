@@ -105,6 +105,7 @@ interface GuildDetail {
 }
 
 type ServerWorkspaceTab = 'events' | 'bot';
+type GuildFilterMode = 'all' | 'configured' | 'unconfigured';
 
 export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   const isFr = locale === 'fr';
@@ -122,6 +123,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   const [guildsLoading, setGuildsLoading] = useState(false);
   const [guilds, setGuilds] = useState<GuildSummary[]>([]);
   const [guildSearch, setGuildSearch] = useState('');
+  const [guildFilter, setGuildFilter] = useState<GuildFilterMode>('all');
   const [botOnline, setBotOnline] = useState(false);
   const [selectedGuildId, setSelectedGuildId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ServerWorkspaceTab>('events');
@@ -271,7 +273,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
     return () => {
       active = false;
     };
-  }, [loadGuilds]);
+  }, [loadGuilds, locale]);
 
   // Listen for OAuth popup completion
   useEffect(() => {
@@ -689,9 +691,13 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
 
   const filteredGuilds = useMemo(() => {
     const q = guildSearch.trim().toLowerCase();
-    if (!q) return guilds;
-    return guilds.filter((g) => g.name.toLowerCase().includes(q));
-  }, [guilds, guildSearch]);
+    return guilds.filter((g) => {
+      if (guildFilter === 'configured' && !(g.botPresent && g.configured)) return false;
+      if (guildFilter === 'unconfigured' && g.botPresent && g.configured) return false;
+      if (!q) return true;
+      return g.name.toLowerCase().includes(q);
+    });
+  }, [guilds, guildSearch, guildFilter]);
 
   const filteredEvents = useMemo(() => {
     if (!detail) return [];
@@ -711,7 +717,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   // Loading state
   if (authLoading) {
     return (
-      <div className="max-w-[1200px] mx-auto px-6 py-16 text-center text-[#b9bbbe] text-sm">
+      <div className="max-w-[1280px] w-full mx-auto px-4 sm:px-6 py-20 text-center text-[#b9bbbe] text-sm">
         {isFr ? 'Vérification de la session Discord…' : 'Checking Discord session…'}
       </div>
     );
@@ -720,10 +726,10 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   // Unauthenticated Discord OAuth2 Screen
   if (!user) {
     return (
-      <div className="max-w-[680px] mx-auto px-6 py-16 animate-fade-in-up">
-        <div className="rounded-xl bg-[#2f3136] border border-white/10 p-8 space-y-6 text-center">
-          <div className="space-y-2">
-            <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-[#F2F3F5]">
+      <div className="max-w-[640px] w-full mx-auto px-4 sm:px-6 py-12 sm:py-20 animate-fade-in-up">
+        <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-6 sm:p-10 space-y-6 text-center">
+          <div className="space-y-2.5">
+            <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-[#F2F3F5] tracking-tight text-balance">
               {isFr ? 'Dashboard Discord Logoto' : 'Logoto Discord Dashboard'}
             </h1>
             <p className="text-sm sm:text-base text-[#b9bbbe] leading-relaxed">
@@ -740,7 +746,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
           )}
 
           {authConfig && !authConfig.oauthConfigured ? (
-            <div className="text-left rounded-lg bg-[#292b2f] border border-[#8c935d]/40 p-5 space-y-3 text-sm text-[#b9bbbe]">
+            <div className="text-left rounded-xl bg-[#1e1f22] border border-[#8c935d]/40 p-5 space-y-3 text-sm text-[#b9bbbe]">
               <p className="font-semibold text-[#a3ab72]">
                 {isFr
                   ? 'Configuration OAuth2 Discord requise côté serveur'
@@ -757,12 +763,12 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 <li>TOKEN</li>
               </ul>
               <div className="pt-1">
-                <p className="text-xs text-[#b9bbbe] mb-1">
+                <p className="text-xs text-[#b9bbbe] mb-1.5">
                   {isFr
                     ? 'URL de redirection OAuth2 (Redirect URI) à ajouter dans le Discord Developer Portal :'
                     : 'OAuth2 Redirect URI to register in Discord Developer Portal:'}
                 </p>
-                <code className="block font-mono text-xs bg-[#202225] text-[#a3ab72] px-3 py-2 rounded break-all">
+                <code className="block font-mono text-xs bg-[#23252a] text-[#a3ab72] px-3 py-2 rounded break-all">
                   {authConfig.redirectUri}
                 </code>
               </div>
@@ -772,7 +778,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
               <button
                 type="button"
                 onClick={handleDiscordLogin}
-                className="inline-flex items-center justify-center gap-3 px-7 py-3.5 rounded-lg bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold text-base transition-colors cursor-pointer whitespace-nowrap"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-3 min-h-[48px] px-7 py-3 rounded-lg bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold text-base transition-colors cursor-pointer whitespace-nowrap"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.041.001-.09-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028z" />
@@ -781,43 +787,48 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
               </button>
 
               {authConfig?.redirectUri && (
-                <div className="text-left rounded-lg bg-[#292b2f] border border-white/10 p-4 space-y-2">
-                  <p className="text-xs text-[#b9bbbe]">
-                    {isFr
-                      ? 'URL de redirection OAuth2 (Redirect URI) à ajouter dans Discord Developer Portal → OAuth2 → Redirects :'
-                      : 'OAuth2 Redirect URI to add in Discord Developer Portal → OAuth2 → Redirects:'}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 font-mono text-xs bg-[#202225] text-[#a3ab72] px-3 py-2 rounded break-all select-all">
-                      {authConfig.redirectUri}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void navigator.clipboard
-                          .writeText(authConfig.redirectUri)
-                          .then(() => {
-                            setCopiedRedirectUri(true);
-                            window.setTimeout(() => setCopiedRedirectUri(false), 1800);
-                          })
-                          .catch(() => {});
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded bg-[#36393f] hover:bg-[#40444b] border border-white/10 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer shrink-0"
-                    >
-                      {copiedRedirectUri ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-[#43b581]" />
-                          <span>{isFr ? 'Copié' : 'Copied'}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>{isFr ? 'Copier' : 'Copy'}</span>
-                        </>
-                      )}
-                    </button>
+                <details className="text-left rounded-xl bg-[#1e1f22] border border-white/[0.08] p-4">
+                  <summary className="text-xs font-semibold text-[#b9bbbe] cursor-pointer select-none">
+                    {isFr ? 'Configuration Redirect URI (OAuth2)' : 'Redirect URI configuration (OAuth2)'}
+                  </summary>
+                  <div className="pt-3 space-y-2">
+                    <p className="text-xs text-[#b9bbbe]">
+                      {isFr
+                        ? 'URL de redirection à enregistrer dans Discord Developer Portal → OAuth2 → Redirects :'
+                        : 'Redirect URI to add in Discord Developer Portal → OAuth2 → Redirects:'}
+                    </p>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <code className="flex-1 font-mono text-xs bg-[#23252a] text-[#a3ab72] px-3 py-2 rounded break-all select-all">
+                        {authConfig.redirectUri}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard
+                            .writeText(authConfig.redirectUri)
+                            .then(() => {
+                              setCopiedRedirectUri(true);
+                              window.setTimeout(() => setCopiedRedirectUri(false), 1800);
+                            })
+                            .catch(() => {});
+                        }}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg bg-[#2b2d31] hover:bg-[#313338] border border-white/10 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer shrink-0"
+                      >
+                        {copiedRedirectUri ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-[#43b581]" />
+                            <span>{isFr ? 'Copié' : 'Copied'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>{isFr ? 'Copier' : 'Copy'}</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                </details>
               )}
             </div>
           )}
@@ -828,8 +839,8 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
 
   // Reusable User & Account Bar
   const renderAccountBar = () => (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/10">
-      <div className="flex items-center gap-3.5">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/[0.08]">
+      <div className="flex items-center gap-3.5 min-w-0">
         {user.avatarUrl ? (
           <ResilientImage
             src={user.avatarUrl}
@@ -842,19 +853,19 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
             {user.username.slice(0, 2).toUpperCase()}
           </div>
         )}
-        <div>
-          <h1 className="font-display text-xl font-bold text-[#F2F3F5]">
+        <div className="min-w-0">
+          <h1 className="font-display text-lg sm:text-xl font-bold text-[#F2F3F5] truncate">
             {user.globalName || user.username}
           </h1>
-          <p className="text-xs text-[#b9bbbe] font-mono">@{user.username}</p>
+          <p className="text-xs text-[#b9bbbe] font-mono truncate">@{user.username}</p>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2.5">
         <div
           role="group"
           aria-label={isFr ? 'Langue du site' : 'Site language'}
-          className="inline-flex items-center p-0.5 rounded-lg bg-[#2f3136] border border-white/10"
+          className="inline-flex items-center p-0.5 rounded-lg bg-[#2b2d31] border border-white/10"
         >
           <button
             type="button"
@@ -880,7 +891,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
           type="button"
           onClick={() => void loadGuilds()}
           disabled={guildsLoading}
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#2f3136] hover:bg-[#292b2f] border border-white/10 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
+          className="inline-flex items-center gap-2 min-h-[40px] px-3.5 py-2 rounded-lg bg-[#2b2d31] hover:bg-[#313338] border border-white/10 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${guildsLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
           <span>{isFr ? 'Actualiser' : 'Refresh'}</span>
@@ -889,7 +900,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
         <button
           type="button"
           onClick={handleLogout}
-          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#2f3136] hover:bg-[#f04747]/15 border border-white/10 hover:border-[#f04747]/40 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer"
+          className="inline-flex items-center gap-2 min-h-[40px] px-3.5 py-2 rounded-lg bg-[#2b2d31] hover:bg-[#f04747]/15 border border-white/10 hover:border-[#f04747]/40 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer"
         >
           <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
           <span>{isFr ? 'Déconnexion' : 'Logout'}</span>
@@ -899,11 +910,11 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   );
 
   // =========================================================================
-  // STEP 1: STANDALONE SERVER SELECTION SCREEN (ALONE ON THE PAGE)
+  // STEP 1: STANDALONE SERVER SELECTION SCREEN
   // =========================================================================
   if (!selectedGuildSummary) {
     return (
-      <div className="max-w-[1160px] w-full mx-auto px-6 lg:px-10 py-8 space-y-6 animate-fade-in-up">
+      <div className="max-w-[1280px] w-full mx-auto px-4 sm:px-6 lg:px-10 py-8 space-y-6 animate-fade-in-up">
         {renderAccountBar()}
 
         {bannerMsg && (
@@ -911,7 +922,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
             role="status"
             className={`flex items-center justify-between gap-4 px-4 py-3 rounded-lg border text-sm ${
               bannerMsg.kind === 'ok'
-                ? 'bg-[#2f3136] border-[#8c935d]/50 text-[#F2F3F5]'
+                ? 'bg-[#2b2d31] border-[#8c935d]/50 text-[#F2F3F5]'
                 : 'bg-[#f04747]/10 border-[#f04747]/50 text-[#F2F3F5]'
             }`}
           >
@@ -920,7 +931,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
               type="button"
               onClick={() => setBannerMsg(null)}
               aria-label={isFr ? 'Fermer' : 'Dismiss'}
-              className="text-[#b9bbbe] hover:text-[#F2F3F5] cursor-pointer"
+              className="text-[#b9bbbe] hover:text-[#F2F3F5] cursor-pointer p-1"
             >
               <X className="w-4 h-4" />
             </button>
@@ -928,7 +939,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
         )}
 
         {!botOnline && (
-          <div className="rounded-lg bg-[#2f3136] border border-[#f04747]/40 px-4 py-3 text-sm text-[#F2F3F5] flex items-center gap-3">
+          <div className="rounded-xl bg-[#2b2d31] border border-[#f04747]/40 px-4 py-3 text-sm text-[#F2F3F5] flex items-center gap-3">
             <AlertTriangle className="w-4 h-4 text-[#f04747] shrink-0" aria-hidden="true" />
             <span>
               {isFr
@@ -939,9 +950,9 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
         )}
 
         <section className="space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
             <div>
-              <h2 className="font-display text-2xl font-extrabold text-[#F2F3F5]">
+              <h2 className="font-display text-2xl font-extrabold text-[#F2F3F5] tracking-tight">
                 {isFr ? 'Sélectionnez un serveur Discord' : 'Select a Discord Server'}
               </h2>
               <p className="text-sm text-[#b9bbbe] mt-1">
@@ -952,34 +963,65 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
             </div>
 
             {guilds.length > 0 && (
-              <div className="relative w-full sm:w-72">
-                <Search
-                  className="w-4 h-4 text-[#b9bbbe] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                  aria-hidden="true"
-                />
-                <input
-                  type="search"
-                  value={guildSearch}
-                  onChange={(e) => setGuildSearch(e.target.value)}
-                  placeholder={isFr ? 'Rechercher un serveur…' : 'Search servers…'}
-                  className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-[#2f3136] border border-white/10 text-sm text-[#F2F3F5] focus:border-[#a3ab72] focus:outline-none"
-                />
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <div
+                  role="tablist"
+                  aria-label={isFr ? 'Filtrer les serveurs' : 'Filter servers'}
+                  className="inline-flex items-center gap-1 p-1 rounded-lg bg-[#2b2d31] border border-white/10 self-start sm:self-auto"
+                >
+                  {(
+                    [
+                      { id: 'all', label: isFr ? 'Tous' : 'All' },
+                      { id: 'configured', label: isFr ? 'Configurés' : 'Configured' },
+                      { id: 'unconfigured', label: isFr ? 'À préparer' : 'Setup' },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={guildFilter === item.id}
+                      onClick={() => setGuildFilter(item.id)}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                        guildFilter === item.id
+                          ? 'bg-[#8c935d] text-[#F2F3F5]'
+                          : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative w-full sm:w-64">
+                  <Search
+                    className="w-4 h-4 text-[#b9bbbe] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                    aria-hidden="true"
+                  />
+                  <input
+                    type="search"
+                    value={guildSearch}
+                    onChange={(e) => setGuildSearch(e.target.value)}
+                    placeholder={isFr ? 'Rechercher un serveur…' : 'Search servers…'}
+                    className="w-full min-h-[42px] pl-9 pr-3 py-2 rounded-lg bg-[#2b2d31] border border-white/10 text-sm text-[#F2F3F5] focus:border-[#a3ab72] focus:outline-none"
+                  />
+                </div>
               </div>
             )}
           </div>
 
           {guildsLoading && guilds.length === 0 ? (
-            <div className="rounded-xl bg-[#2f3136] border border-white/10 p-12 text-center text-sm text-[#b9bbbe]">
+            <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-12 text-center text-sm text-[#b9bbbe]">
               {isFr ? 'Chargement de vos serveurs Discord…' : 'Loading your Discord servers…'}
             </div>
           ) : guilds.length === 0 ? (
-            <div className="rounded-xl bg-[#2f3136] border border-white/10 p-12 text-center text-sm text-[#b9bbbe]">
+            <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-12 text-center text-sm text-[#b9bbbe]">
               {isFr
                 ? 'Aucun serveur trouvé avec les permissions Administrateur ou Gérer le serveur.'
                 : 'No servers found with Administrator or Manage Server permission.'}
             </div>
           ) : filteredGuilds.length === 0 ? (
-            <div className="rounded-xl bg-[#2f3136] border border-white/10 p-12 text-center text-sm text-[#b9bbbe]">
+            <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-12 text-center text-sm text-[#b9bbbe]">
               {isFr ? 'Aucun serveur ne correspond à votre recherche.' : 'No servers match your search.'}
             </div>
           ) : (
@@ -1012,7 +1054,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                     key={g.id}
                     type="button"
                     onClick={() => handleSelectGuild(g.id)}
-                    className="group text-left rounded-xl bg-[#2f3136] border border-white/10 hover:border-[#8c935d] p-5 flex items-center justify-between gap-4 transition-all duration-150 hover:-translate-y-0.5 cursor-pointer"
+                    className="group text-left rounded-xl bg-[#2b2d31] border border-white/[0.08] hover:border-[#8c935d] p-4 sm:p-5 min-h-[82px] flex items-center justify-between gap-4 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-3.5 min-w-0">
                       {g.iconUrl ? (
@@ -1023,7 +1065,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                           className="w-12 h-12 rounded-xl object-cover shrink-0 border border-white/10"
                         />
                       ) : (
-                        <div className="w-12 h-12 rounded-xl bg-[#36393f] border border-white/10 flex items-center justify-center text-sm font-bold text-[#a3ab72] shrink-0">
+                        <div className="w-12 h-12 rounded-xl bg-[#1e1f22] border border-white/10 flex items-center justify-center text-sm font-bold text-[#a3ab72] shrink-0">
                           {g.name.slice(0, 2).toUpperCase()}
                         </div>
                       )}
@@ -1031,13 +1073,18 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                         <p className="font-display text-base font-bold text-[#F2F3F5] truncate group-hover:text-[#a3ab72] transition-colors">
                           {g.name}
                         </p>
-                        <p className="text-xs text-[#b9bbbe] truncate mt-0.5">{statusSummary}</p>
+                        <p className="text-xs text-[#b9bbbe] truncate mt-0.5 tabular-nums">
+                          {statusSummary}
+                        </p>
                       </div>
                     </div>
 
                     <div className="inline-flex items-center gap-1 text-xs font-bold text-[#a3ab72] shrink-0">
                       <span>{actionLabel}</span>
-                      <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                      <ChevronRight
+                        className="w-4 h-4 transition-transform group-hover:translate-x-0.5"
+                        aria-hidden="true"
+                      />
                     </div>
                   </button>
                 );
@@ -1053,16 +1100,16 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   // STEP 2: DEDICATED SELECTED SERVER WORKSPACE
   // =========================================================================
   return (
-    <div className="max-w-[1280px] w-full mx-auto px-6 lg:px-10 py-8 space-y-6 animate-fade-in-up">
+    <div className="max-w-[1280px] w-full mx-auto px-4 sm:px-6 lg:px-10 py-8 space-y-6 animate-fade-in-up">
       {renderAccountBar()}
 
       {/* Server Contextual Header + Back to Server Selection */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl bg-[#2f3136] border border-white/10 p-5">
-        <div className="flex items-center gap-4 min-w-0">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 rounded-xl bg-[#2b2d31] border border-white/[0.08] p-4 sm:p-5">
+        <div className="flex items-center gap-3.5 min-w-0">
           <button
             type="button"
             onClick={handleBackToServers}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#36393f] hover:bg-[#292b2f] border border-white/10 text-xs font-bold text-[#F2F3F5] transition-colors cursor-pointer shrink-0"
+            className="inline-flex items-center gap-2 min-h-[40px] px-3.5 py-2 rounded-lg bg-[#1e1f22] hover:bg-[#313338] border border-white/10 text-xs font-bold text-[#F2F3F5] transition-colors cursor-pointer shrink-0"
           >
             <ArrowLeft className="w-3.5 h-3.5 text-[#a3ab72]" aria-hidden="true" />
             <span>{isFr ? 'Serveurs' : 'Servers'}</span>
@@ -1077,22 +1124,25 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/10"
               />
             ) : (
-              <div className="w-10 h-10 rounded-xl bg-[#36393f] border border-white/10 flex items-center justify-center text-xs font-bold text-[#a3ab72] shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-[#1e1f22] border border-white/10 flex items-center justify-center text-xs font-bold text-[#a3ab72] shrink-0">
                 {selectedGuildSummary.name.slice(0, 2).toUpperCase()}
               </div>
             )}
             <div className="min-w-0">
-              <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#F2F3F5] truncate">
+              <h2 className="font-display text-base sm:text-lg font-extrabold text-[#F2F3F5] truncate">
                 {selectedGuildSummary.name}
               </h2>
               {detail?.configured && (
                 <p className="text-xs text-[#b9bbbe] tabular-nums truncate">
-                  {isFr ? 'Heure locale :' : 'Local time:'}{' '}
                   <span className="text-[#F2F3F5] font-medium">{detail.config.localTime}</span>
-                  <span aria-hidden="true" className="mx-2">·</span>
+                  <span aria-hidden="true" className="mx-1.5">
+                    ·
+                  </span>
                   <span>{detail.config.timezone}</span>
-                  <span aria-hidden="true" className="mx-2">·</span>
-                  <span>
+                  <span aria-hidden="true" className="mx-1.5 hidden sm:inline">
+                    ·
+                  </span>
+                  <span className="hidden sm:inline">
                     {isFr ? `Boost Niveau ${detail.guild.premiumTier}` : `Boost Level ${detail.guild.premiumTier}`}
                   </span>
                 </p>
@@ -1106,14 +1156,14 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
           <div
             role="tablist"
             aria-label={isFr ? 'Sections du serveur' : 'Server sections'}
-            className="inline-flex items-center gap-1 p-1 rounded-lg bg-[#292b2f] border border-white/10 shrink-0 self-start sm:self-auto"
+            className="grid grid-cols-2 lg:inline-flex items-center gap-1 p-1 rounded-lg bg-[#1e1f22] border border-white/10 shrink-0 w-full lg:w-auto"
           >
             <button
               type="button"
               role="tab"
               aria-selected={activeTab === 'events'}
               onClick={() => setActiveTab('events')}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+              className={`inline-flex items-center justify-center gap-2 min-h-[40px] px-4 py-2 rounded-md text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
                 activeTab === 'events'
                   ? 'bg-[#8c935d] text-[#F2F3F5]'
                   : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
@@ -1133,14 +1183,14 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 setActiveTab('bot');
                 setFormOpen(false);
               }}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+              className={`inline-flex items-center justify-center gap-2 min-h-[40px] px-4 py-2 rounded-md text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
                 activeTab === 'bot'
                   ? 'bg-[#8c935d] text-[#F2F3F5]'
                   : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
               }`}
             >
               <Settings className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>{isFr ? 'Configuration du bot' : 'Bot Settings'}</span>
+              <span>{isFr ? 'Paramètres bot' : 'Bot Settings'}</span>
             </button>
           </div>
         )}
@@ -1151,7 +1201,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
           role="status"
           className={`flex items-center justify-between gap-4 px-4 py-3 rounded-lg border text-sm ${
             bannerMsg.kind === 'ok'
-              ? 'bg-[#2f3136] border-[#8c935d]/50 text-[#F2F3F5]'
+              ? 'bg-[#2b2d31] border-[#8c935d]/50 text-[#F2F3F5]'
               : 'bg-[#f04747]/10 border-[#f04747]/50 text-[#F2F3F5]'
           }`}
         >
@@ -1160,7 +1210,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
             type="button"
             onClick={() => setBannerMsg(null)}
             aria-label={isFr ? 'Fermer' : 'Dismiss'}
-            className="text-[#b9bbbe] hover:text-[#F2F3F5] cursor-pointer"
+            className="text-[#b9bbbe] hover:text-[#F2F3F5] cursor-pointer p-1"
           >
             <X className="w-4 h-4" />
           </button>
@@ -1168,7 +1218,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
       )}
 
       {!botOnline && (
-        <div className="rounded-lg bg-[#2f3136] border border-[#f04747]/40 px-4 py-3 text-sm text-[#F2F3F5] flex items-center gap-3">
+        <div className="rounded-xl bg-[#2b2d31] border border-[#f04747]/40 px-4 py-3 text-sm text-[#F2F3F5] flex items-center gap-3">
           <AlertTriangle className="w-4 h-4 text-[#f04747] shrink-0" aria-hidden="true" />
           <span>
             {isFr
@@ -1179,7 +1229,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
       )}
 
       {!selectedGuildSummary.botPresent ? (
-        <div className="rounded-xl bg-[#2f3136] border border-white/10 p-10 text-center space-y-5">
+        <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-8 sm:p-12 text-center space-y-5">
           <Server className="w-10 h-10 text-[#a3ab72] mx-auto" aria-hidden="true" />
           <div className="space-y-2">
             <h3 className="font-display text-xl font-bold text-[#F2F3F5]">
@@ -1191,12 +1241,12 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 : 'Logoto is not in this server yet. Invite the bot, then click Refresh.'}
             </p>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-3">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <a
               href={botInviteForGuild(selectedGuildSummary.id)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] transition-colors"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 min-h-[44px] px-5 py-2.5 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] transition-colors"
             >
               <span>{isFr ? 'Ajouter Logoto à ce serveur' : 'Add Logoto to this server'}</span>
               <ExternalLink className="w-4 h-4" aria-hidden="true" />
@@ -1204,18 +1254,18 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
             <button
               type="button"
               onClick={() => void loadGuilds()}
-              className="px-4 py-2.5 rounded-lg bg-[#36393f] border border-white/15 text-sm font-semibold text-[#F2F3F5] cursor-pointer"
+              className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-lg bg-[#1e1f22] border border-white/15 text-sm font-semibold text-[#F2F3F5] cursor-pointer"
             >
               {isFr ? 'Actualiser' : 'Refresh'}
             </button>
           </div>
         </div>
       ) : detailLoading || !detail ? (
-        <div className="rounded-xl bg-[#2f3136] border border-white/10 p-10 text-center text-sm text-[#b9bbbe]">
+        <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-12 text-center text-sm text-[#b9bbbe]">
           {isFr ? 'Chargement des salons Discord…' : 'Loading Discord channels…'}
         </div>
       ) : !detail.botPermissionsOk ? (
-        <div className="rounded-xl bg-[#2f3136] border border-[#f04747]/50 p-6 space-y-3">
+        <div className="rounded-xl bg-[#2b2d31] border border-[#f04747]/50 p-6 space-y-3">
           <h3 className="font-display text-lg font-bold text-[#f04747]">
             {isFr ? 'Permissions du bot manquantes' : 'Missing Bot Permissions'}
           </h3>
@@ -1225,7 +1275,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
         /* Live /setup Flow */
         <form
           onSubmit={handleSetupGuild}
-          className="rounded-xl bg-[#2f3136] border border-white/10 p-6 sm:p-8 space-y-6 max-w-2xl"
+          className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-6 sm:p-8 space-y-6 max-w-2xl"
         >
           <div>
             <h3 className="font-display text-xl font-bold text-[#F2F3F5]">
@@ -1249,7 +1299,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 id="setup-lang"
                 value={setupLocale}
                 onChange={(e) => setSetupLocale(e.target.value as WebLocale)}
-                className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
+                className="w-full min-h-[44px] px-3 py-2.5 rounded-lg bg-[#1e1f22] border border-white/10 text-sm text-[#F2F3F5]"
               >
                 <option value="fr">Français (fr)</option>
                 <option value="en">English (en)</option>
@@ -1266,7 +1316,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 value={setupTz}
                 onChange={(e) => setSetupTz(e.target.value)}
                 list="common-tz-list"
-                className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm font-mono text-[#F2F3F5]"
+                className="w-full min-h-[44px] px-3 py-2.5 rounded-lg bg-[#1e1f22] border border-white/10 text-sm font-mono text-[#F2F3F5]"
               />
               <datalist id="common-tz-list">
                 {COMMON_TIMEZONES.map((tz) => (
@@ -1279,7 +1329,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
           <button
             type="submit"
             disabled={actionBusy}
-            className="px-6 py-2.5 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
+            className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
           >
             {actionBusy
               ? isFr
@@ -1292,11 +1342,11 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
         </form>
       ) : activeTab === 'bot' ? (
         /* =====================================================================
-           TAB 2: BOT CONFIGURATION (COMPLETELY SEPARATED FROM EVENTS)
+           TAB 2: BOT CONFIGURATION
            ===================================================================== */
         <div className="space-y-6">
-          <div className="rounded-xl bg-[#2f3136] border border-white/10 p-6 space-y-6">
-            <div className="pb-4 border-b border-white/8">
+          <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-5 sm:p-6 space-y-6">
+            <div className="pb-4 border-b border-white/[0.08]">
               <h3 className="font-display text-lg font-bold text-[#F2F3F5]">
                 {isFr ? 'Paramètres du bot sur ce serveur' : 'Bot Settings for this Server'}
               </h3>
@@ -1312,12 +1362,12 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 <label className="block text-xs font-semibold text-[#b9bbbe]">
                   {isFr ? 'Langue du bot' : 'Bot language'}
                 </label>
-                <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#292b2f] border border-white/10">
+                <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#1e1f22] border border-white/10">
                   <button
                     type="button"
                     disabled={actionBusy}
                     onClick={() => void handleUpdateConfig({ locale: 'fr' })}
-                    className={`py-2 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                    className={`min-h-[40px] py-2 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
                       detail.config.locale === 'fr'
                         ? 'bg-[#8c935d] text-[#F2F3F5]'
                         : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
@@ -1329,7 +1379,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                     type="button"
                     disabled={actionBusy}
                     onClick={() => void handleUpdateConfig({ locale: 'en' })}
-                    className={`py-2 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                    className={`min-h-[40px] py-2 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
                       detail.config.locale === 'en'
                         ? 'bg-[#8c935d] text-[#F2F3F5]'
                         : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
@@ -1349,7 +1399,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                   disabled={actionBusy}
                   value={COMMON_TIMEZONES.includes(detail.config.timezone) ? detail.config.timezone : ''}
                   onChange={(e) => void handleUpdateConfig({ timezone: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
+                  className="w-full min-h-[44px] px-3 py-2 rounded-lg bg-[#1e1f22] border border-white/10 text-sm text-[#F2F3F5]"
                 >
                   {!COMMON_TIMEZONES.includes(detail.config.timezone) && (
                     <option value="">{detail.config.timezone}</option>
@@ -1372,12 +1422,12 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                     type="text"
                     value={customTzInput}
                     onChange={(e) => setCustomTzInput(e.target.value)}
-                    className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-[#292b2f] border border-white/10 text-sm font-mono text-[#F2F3F5]"
+                    className="flex-1 min-w-0 min-h-[44px] px-3 py-2 rounded-lg bg-[#1e1f22] border border-white/10 text-sm font-mono text-[#F2F3F5]"
                   />
                   <button
                     type="submit"
                     disabled={actionBusy}
-                    className="px-3 py-2 rounded-lg bg-[#36393f] hover:bg-[#8c935d] border border-white/15 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer shrink-0"
+                    className="min-h-[44px] px-4 py-2 rounded-lg bg-[#313338] hover:bg-[#8c935d] border border-white/15 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer shrink-0"
                   >
                     OK
                   </button>
@@ -1385,10 +1435,10 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
               </form>
             </div>
 
-            <div className="pt-4 border-t border-white/8 flex items-center justify-between gap-3">
+            <div className="pt-4 border-t border-white/[0.08] flex items-center justify-between gap-3">
               <div className="min-w-0 flex items-center gap-2 text-xs text-[#b9bbbe]">
                 <span className="shrink-0">#log-logoto :</span>
-                <code className="truncate font-mono text-[#a3ab72] bg-[#202225] px-2 py-1 rounded">
+                <code className="truncate font-mono text-[#a3ab72] bg-[#1e1f22] px-2.5 py-1 rounded">
                   {detail.config.topic}
                 </code>
               </div>
@@ -1396,15 +1446,15 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 type="button"
                 onClick={handleCopyTopic}
                 aria-label={isFr ? 'Copier le sujet' : 'Copy topic'}
-                className="p-1.5 rounded bg-[#292b2f] border border-white/10 text-[#b9bbbe] hover:text-[#F2F3F5] cursor-pointer shrink-0"
+                className="min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg bg-[#1e1f22] border border-white/10 text-[#b9bbbe] hover:text-[#F2F3F5] cursor-pointer shrink-0"
               >
-                {copiedTopic ? <Check className="w-3.5 h-3.5 text-[#43b581]" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedTopic ? <Check className="w-4 h-4 text-[#43b581]" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
           </div>
 
           {/* Backup & Restore (.txt) */}
-          <div className="rounded-xl bg-[#2f3136] border border-white/10 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h3 className="font-display text-base font-bold text-[#F2F3F5]">
                 {isFr ? 'Sauvegarde & Importation (.txt)' : 'Backup & Restore (.txt)'}
@@ -1428,7 +1478,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={actionBusy}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#36393f] hover:bg-[#292b2f] border border-white/15 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
+                className="inline-flex items-center gap-2 min-h-[42px] px-4 py-2 rounded-lg bg-[#1e1f22] hover:bg-[#313338] border border-white/15 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
               >
                 <Upload className="w-3.5 h-3.5 text-[#a3ab72]" aria-hidden="true" />
                 <span>{isFr ? 'Importer' : 'Import'}</span>
@@ -1437,7 +1487,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 type="button"
                 onClick={() => void handleExportTxt()}
                 disabled={actionBusy}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-xs font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
+                className="inline-flex items-center gap-2 min-h-[42px] px-4 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-xs font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
               >
                 <Download className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>{isFr ? 'Exporter' : 'Export'}</span>
@@ -1447,12 +1497,12 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
         </div>
       ) : (
         /* =====================================================================
-           TAB 1: SCHEDULED EVENTS CONFIGURATION (WITH ADAPTED SQUARE/RECT PREVIEW)
+           TAB 1: SCHEDULED EVENTS CONFIGURATION (RESPONSIVE TABLE + MOBILE CARDS)
            ===================================================================== */
         <div className="space-y-6">
           {/* Events Toolbar */}
-          <div className="rounded-xl bg-[#2f3136] border border-white/10 p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-4 sm:p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <h3 className="font-display text-lg font-bold text-[#F2F3F5]">
                 {isFr ? 'Événements programmés' : 'Scheduled Events'}{' '}
                 <span className="font-mono text-sm text-[#a3ab72] tabular-nums">
@@ -1463,15 +1513,15 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 type="button"
                 onClick={openCreateForm}
                 disabled={actionBusy}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] transition-colors cursor-pointer self-start sm:self-auto"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] transition-colors cursor-pointer"
               >
                 <Plus className="w-4 h-4" aria-hidden="true" />
                 <span>{isFr ? 'Créer un événement' : 'Create event'}</span>
               </button>
             </div>
 
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3 border-t border-white/8">
-              <div className="relative flex-1 max-w-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3 border-t border-white/[0.08]">
+              <div className="relative flex-1 md:max-w-sm">
                 <Search
                   className="w-4 h-4 text-[#b9bbbe] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
                   aria-hidden="true"
@@ -1481,14 +1531,14 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder={isFr ? 'Rechercher un salon…' : 'Search channel…'}
-                  className="w-full pl-9 pr-3 py-2 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
+                  className="w-full min-h-[42px] pl-9 pr-3 py-2 rounded-lg bg-[#1e1f22] border border-white/10 text-sm text-[#F2F3F5]"
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-[#292b2f] border border-white/10">
+              <div className="flex items-center gap-1 p-1 rounded-lg bg-[#1e1f22] border border-white/10 overflow-x-auto no-scrollbar">
                 <button
                   type="button"
                   onClick={() => setTypeFilter('all')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
+                  className={`px-3 py-1.5 min-h-[34px] text-xs font-semibold rounded-md cursor-pointer whitespace-nowrap shrink-0 ${
                     typeFilter === 'all' ? 'bg-[#8c935d] text-[#F2F3F5]' : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
                   }`}
                 >
@@ -1499,7 +1549,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                     key={tp}
                     type="button"
                     onClick={() => setTypeFilter(tp)}
-                    className={`px-3 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
+                    className={`px-3 py-1.5 min-h-[34px] text-xs font-semibold rounded-md cursor-pointer whitespace-nowrap shrink-0 ${
                       typeFilter === tp ? 'bg-[#8c935d] text-[#F2F3F5]' : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
                     }`}
                   >
@@ -1520,13 +1570,13 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
             </div>
           </div>
 
-          {/* Create / Edit Event Form with Adapted Square (Logo) vs Rectangle (Banner/Splash) Preview */}
+          {/* Create / Edit Event Form */}
           {formOpen && (
             <form
               onSubmit={handleEventSubmit}
-              className="rounded-xl bg-[#2f3136] border border-[#a3ab72]/60 p-6 space-y-5"
+              className="rounded-xl bg-[#2b2d31] border border-[#a3ab72]/60 p-5 sm:p-6 space-y-5"
             >
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
                 <div>
                   <h4 className="font-display text-base font-bold text-[#F2F3F5]">
                     {editingChannelId
@@ -1545,7 +1595,8 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                 <button
                   type="button"
                   onClick={() => setFormOpen(false)}
-                  className="p-1.5 text-[#b9bbbe] hover:text-[#F2F3F5] cursor-pointer"
+                  aria-label={isFr ? 'Fermer le formulaire' : 'Close form'}
+                  className="min-w-[40px] min-h-[40px] inline-flex items-center justify-center rounded-lg text-[#b9bbbe] hover:text-[#F2F3F5] hover:bg-white/5 cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1560,7 +1611,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                     id="live-ev-type"
                     value={draftType}
                     onChange={(e) => setDraftType(e.target.value as EventCategory)}
-                    className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
+                    className="w-full min-h-[44px] px-3 py-2.5 rounded-lg bg-[#1e1f22] border border-white/10 text-sm text-[#F2F3F5]"
                   >
                     {EVENT_TYPES.map((tp) => (
                       <option key={tp} value={tp}>
@@ -1578,7 +1629,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                     id="live-ev-month"
                     value={draftMonth}
                     onChange={(e) => setDraftMonth(Number(e.target.value))}
-                    className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
+                    className="w-full min-h-[44px] px-3 py-2.5 rounded-lg bg-[#1e1f22] border border-white/10 text-sm text-[#F2F3F5]"
                   >
                     {Array.from({ length: 12 }, (_, idx) => idx + 1).map((m) => (
                       <option key={m} value={m}>
@@ -1599,23 +1650,29 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                     max={31}
                     value={draftDay}
                     onChange={(e) => setDraftDay(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm font-mono text-[#F2F3F5] tabular-nums"
+                    className="w-full min-h-[44px] px-3 py-2.5 rounded-lg bg-[#1e1f22] border border-white/10 text-sm font-mono text-[#F2F3F5] tabular-nums"
                   />
                 </div>
               </div>
 
               {draftType === 'b' && detail.guild.premiumTier < 2 && (
-                <p className="text-xs text-[#f0b232]">
-                  {isFr
-                    ? `Boost Niveau 2 requis pour les bannières (serveur actuellement au niveau ${detail.guild.premiumTier}).`
-                    : `Boost Level 2 required for banners (server is currently Level ${detail.guild.premiumTier}).`}
+                <p className="text-xs text-[#f0b232] flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>
+                    {isFr
+                      ? `Boost Niveau 2 requis pour les bannières (serveur actuellement au niveau ${detail.guild.premiumTier}).`
+                      : `Boost Level 2 required for banners (server is currently Level ${detail.guild.premiumTier}).`}
+                  </span>
                 </p>
               )}
               {draftType === 'i' && detail.guild.premiumTier < 1 && (
-                <p className="text-xs text-[#f0b232]">
-                  {isFr
-                    ? `Boost Niveau 1 requis pour les images d'invitation (serveur actuellement au niveau ${detail.guild.premiumTier}).`
-                    : `Boost Level 1 required for invite splashes (server is currently Level ${detail.guild.premiumTier}).`}
+                <p className="text-xs text-[#f0b232] flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span>
+                    {isFr
+                      ? `Boost Niveau 1 requis pour les images d'invitation (serveur actuellement au niveau ${detail.guild.premiumTier}).`
+                      : `Boost Level 1 required for invite splashes (server is currently Level ${detail.guild.premiumTier}).`}
+                  </span>
                 </p>
               )}
 
@@ -1636,13 +1693,13 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                     value={draftValue}
                     onChange={(e) => setDraftValue(e.target.value)}
                     placeholder={draftType === 'n' ? 'Mon Serveur' : 'https://raw.githubusercontent.com/...'}
-                    className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
+                    className="w-full min-h-[44px] px-3 py-2.5 rounded-lg bg-[#1e1f22] border border-white/10 text-sm text-[#F2F3F5]"
                   />
                 </div>
 
-                {/* Adapted Preview Container: Square (1:1) for Logo vs Rectangle (16:9) for Banner/Splash */}
+                {/* Adapted Preview Container */}
                 {draftType === 'n' ? (
-                  <div className="rounded-lg bg-[#292b2f] border border-white/10 p-4 flex items-center gap-3.5">
+                  <div className="rounded-lg bg-[#1e1f22] border border-white/[0.08] p-4 flex items-center gap-3.5">
                     {detail.guild.iconUrl ? (
                       <ResilientImage
                         src={detail.guild.iconUrl}
@@ -1651,7 +1708,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                         className="w-11 h-11 rounded-xl object-cover shrink-0 border border-white/10"
                       />
                     ) : (
-                      <div className="w-11 h-11 rounded-xl bg-[#36393f] border border-white/10 flex items-center justify-center text-xs font-bold text-[#a3ab72] shrink-0">
+                      <div className="w-11 h-11 rounded-xl bg-[#2b2d31] border border-white/10 flex items-center justify-center text-xs font-bold text-[#a3ab72] shrink-0">
                         {detail.guild.name.slice(0, 2).toUpperCase()}
                       </div>
                     )}
@@ -1665,7 +1722,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-lg bg-[#292b2f] border border-white/10 p-4 space-y-3">
+                  <div className="rounded-lg bg-[#1e1f22] border border-white/[0.08] p-4 space-y-3">
                     <div className="flex items-center justify-between gap-2 text-xs text-[#b9bbbe]">
                       <span className="font-semibold text-[#F2F3F5]">
                         {draftType === 'l'
@@ -1690,8 +1747,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                     </div>
 
                     {draftType === 'l' ? (
-                      /* Square 1:1 Logo Preview */
-                      <div className="w-32 h-32 aspect-square rounded-2xl overflow-hidden border border-white/15 bg-[#202225] flex items-center justify-center">
+                      <div className="w-28 h-28 sm:w-32 sm:h-32 aspect-square rounded-2xl overflow-hidden border border-white/15 bg-[#23252a] flex items-center justify-center">
                         {isSafeImageUrl(draftValue) ? (
                           <ResilientImage
                             src={draftValue.trim()}
@@ -1707,8 +1763,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                         )}
                       </div>
                     ) : (
-                      /* Rectangle 16:9 Banner / Splash Preview */
-                      <div className="w-full max-w-[360px] aspect-video rounded-xl overflow-hidden border border-white/15 bg-[#202225] flex items-center justify-center">
+                      <div className="w-full max-w-[360px] aspect-video rounded-xl overflow-hidden border border-white/15 bg-[#23252a] flex items-center justify-center">
                         {isSafeImageUrl(draftValue) ? (
                           <ResilientImage
                             src={draftValue.trim()}
@@ -1730,18 +1785,18 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
 
               {formError && <p className="text-sm text-[#f04747]">{formError}</p>}
 
-              <div className="flex justify-end gap-3">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setFormOpen(false)}
-                  className="px-4 py-2 rounded-lg bg-[#36393f] border border-white/15 text-sm font-semibold text-[#F2F3F5] cursor-pointer"
+                  className="min-h-[44px] px-4 py-2 rounded-lg bg-[#1e1f22] border border-white/15 text-sm font-semibold text-[#F2F3F5] cursor-pointer"
                 >
                   {isFr ? 'Annuler' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
                   disabled={actionBusy}
-                  className="px-5 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] cursor-pointer disabled:opacity-50"
+                  className="min-h-[44px] px-5 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] cursor-pointer disabled:opacity-50"
                 >
                   {actionBusy
                     ? isFr
@@ -1755,8 +1810,8 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
             </form>
           )}
 
-          {/* Events Table */}
-          <div className="rounded-xl bg-[#2f3136] border border-white/10 overflow-hidden">
+          {/* Events List: Empty State / Desktop Table / Mobile Cards */}
+          <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] overflow-hidden">
             {filteredEvents.length === 0 ? (
               <div className="p-10 text-center space-y-4">
                 <p className="text-sm text-[#b9bbbe]">
@@ -1772,118 +1827,216 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                   <button
                     type="button"
                     onClick={openCreateForm}
-                    className="px-4 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] cursor-pointer"
+                    className="min-h-[44px] px-5 py-2.5 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] cursor-pointer"
                   >
                     {isFr ? 'Créer un événement' : 'Create event'}
                   </button>
                 )}
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-white/10 bg-[#292b2f]/60 text-xs font-semibold text-[#b9bbbe]">
-                      <th className="py-3 px-4">{isFr ? 'Aperçu' : 'Preview'}</th>
-                      <th className="py-3 px-4">{isFr ? 'Salon' : 'Channel'}</th>
-                      <th className="py-3 px-4">Type</th>
-                      <th className="py-3 px-4">Date</th>
-                      <th className="py-3 px-4">{isFr ? 'Valeur' : 'Value'}</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/8 text-sm">
-                    {filteredEvents.map((ev) => {
-                      const isConfirming = confirmDeleteId === ev.id;
-                      return (
-                        <tr key={ev.id} className="hover:bg-white/[0.03] transition-colors">
-                          <td className="py-2.5 px-4">
-                            {ev.type === 'n' ? (
-                              <div className="w-10 h-10 rounded-lg bg-[#292b2f] border border-white/10 flex items-center justify-center text-xs font-bold text-[#a3ab72]">
-                                Aa
-                              </div>
-                            ) : ev.type === 'l' ? (
-                              <div className="w-10 h-10 aspect-square rounded-lg overflow-hidden border border-white/10 bg-[#202225]">
-                                <ResilientImage
-                                  src={ev.value}
-                                  alt={ev.channelName}
-                                  fallbackLabel="1:1"
-                                  className="w-full h-full object-cover"
-                                />
-                              </div>
-                            ) : (
-                              <div className="w-[72px] h-10 aspect-video rounded-md overflow-hidden border border-white/10 bg-[#202225]">
-                                <ResilientImage
-                                  src={ev.value}
-                                  alt={ev.channelName}
-                                  fallbackLabel="16:9"
-                                  className="w-full h-full object-cover"
-                                />
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 font-mono text-xs font-semibold text-[#a3ab72] whitespace-nowrap">
-                            #{ev.channelName}
-                          </td>
-                          <td className="py-3 px-4 text-[#F2F3F5]/90 whitespace-nowrap">
-                            {getEventTypeLabel(locale, ev.type)}
-                          </td>
-                          <td className="py-3 px-4 text-[#b9bbbe] tabular-nums whitespace-nowrap">
-                            {ev.day} {getMonthLabel(locale, ev.month)}
-                          </td>
-                          <td className="py-3 px-4 max-w-[240px]">
-                            <span
+              <>
+                {/* Mobile Card Layout (< md) */}
+                <div className="md:hidden divide-y divide-white/[0.08]">
+                  {filteredEvents.map((ev) => {
+                    const isConfirming = confirmDeleteId === ev.id;
+                    return (
+                      <div key={ev.id} className="p-4 space-y-3">
+                        <div className="flex items-start gap-3.5">
+                          {ev.type === 'n' ? (
+                            <div className="w-12 h-12 rounded-lg bg-[#1e1f22] border border-white/10 flex items-center justify-center text-xs font-bold text-[#a3ab72] shrink-0">
+                              Aa
+                            </div>
+                          ) : ev.type === 'l' ? (
+                            <div className="w-12 h-12 aspect-square rounded-lg overflow-hidden border border-white/10 bg-[#1e1f22] shrink-0">
+                              <ResilientImage
+                                src={ev.value}
+                                alt={ev.channelName}
+                                fallbackLabel="1:1"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-20 h-12 aspect-video rounded-md overflow-hidden border border-white/10 bg-[#1e1f22] shrink-0">
+                              <ResilientImage
+                                src={ev.value}
+                                alt={ev.channelName}
+                                fallbackLabel="16:9"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          )}
+
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-mono text-xs font-semibold text-[#a3ab72]">
+                                #{ev.channelName}
+                              </span>
+                              <span className="text-xs text-[#b9bbbe] tabular-nums">
+                                {ev.day} {getMonthLabel(locale, ev.month)}
+                              </span>
+                            </div>
+                            <p className="text-xs font-medium text-[#F2F3F5]">
+                              {getEventTypeLabel(locale, ev.type)}
+                            </p>
+                            <p
                               title={ev.value}
-                              className="block truncate font-mono text-xs text-[#F2F3F5]/85"
+                              className="font-mono text-xs text-[#b9bbbe] truncate"
                             >
                               {ev.value}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right whitespace-nowrap">
-                            {isConfirming ? (
-                              <div className="inline-flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  disabled={actionBusy}
-                                  onClick={() => void handleDeleteEvent(ev.id)}
-                                  className="px-2.5 py-1 rounded bg-[#f04747] text-xs font-semibold text-white cursor-pointer"
-                                >
-                                  {isFr ? 'Confirmer' : 'Confirm'}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmDeleteId(null)}
-                                  className="px-2.5 py-1 rounded bg-[#36393f] border border-white/15 text-xs font-semibold text-[#F2F3F5] cursor-pointer"
-                                >
-                                  {isFr ? 'Annuler' : 'Cancel'}
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="inline-flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => openEditForm(ev)}
-                                  aria-label={isFr ? `Modifier ${ev.channelName}` : `Edit ${ev.channelName}`}
-                                  className="p-1.5 rounded-md text-[#b9bbbe] hover:text-[#F2F3F5] hover:bg-white/10 cursor-pointer"
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmDeleteId(ev.id)}
-                                  aria-label={isFr ? `Supprimer ${ev.channelName}` : `Delete ${ev.channelName}`}
-                                  className="p-1.5 rounded-md text-[#b9bbbe] hover:text-[#f04747] hover:bg-[#f04747]/10 cursor-pointer"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            </p>
+                          </div>
+                        </div>
+
+                        {isConfirming ? (
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              disabled={actionBusy}
+                              onClick={() => void handleDeleteEvent(ev.id)}
+                              className="flex-1 min-h-[42px] px-3 py-2 rounded-lg bg-[#f04747] text-xs font-semibold text-white cursor-pointer"
+                            >
+                              {isFr ? 'Confirmer suppression' : 'Confirm delete'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="flex-1 min-h-[42px] px-3 py-2 rounded-lg bg-[#1e1f22] border border-white/15 text-xs font-semibold text-[#F2F3F5] cursor-pointer"
+                            >
+                              {isFr ? 'Annuler' : 'Cancel'}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditForm(ev)}
+                              className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[42px] px-3 py-2 rounded-lg bg-[#1e1f22] hover:bg-[#313338] border border-white/10 text-xs font-semibold text-[#F2F3F5] cursor-pointer"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-[#a3ab72]" aria-hidden="true" />
+                              <span>{isFr ? 'Modifier' : 'Edit'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(ev.id)}
+                              className="flex-1 inline-flex items-center justify-center gap-1.5 min-h-[42px] px-3 py-2 rounded-lg bg-[#1e1f22] hover:bg-[#f04747]/15 border border-white/10 text-xs font-semibold text-[#F2F3F5] cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-[#f04747]" aria-hidden="true" />
+                              <span>{isFr ? 'Supprimer' : 'Delete'}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop High-Density Table (>= md) */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-white/[0.08] bg-[#1e1f22]/70 text-xs font-semibold text-[#b9bbbe]">
+                        <th className="py-3 px-4">{isFr ? 'Aperçu' : 'Preview'}</th>
+                        <th className="py-3 px-4">{isFr ? 'Salon' : 'Channel'}</th>
+                        <th className="py-3 px-4">Type</th>
+                        <th className="py-3 px-4">Date</th>
+                        <th className="py-3 px-4">{isFr ? 'Valeur' : 'Value'}</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/[0.06] text-sm">
+                      {filteredEvents.map((ev) => {
+                        const isConfirming = confirmDeleteId === ev.id;
+                        return (
+                          <tr key={ev.id} className="hover:bg-white/[0.03] transition-colors">
+                            <td className="py-2.5 px-4">
+                              {ev.type === 'n' ? (
+                                <div className="w-10 h-10 rounded-lg bg-[#1e1f22] border border-white/10 flex items-center justify-center text-xs font-bold text-[#a3ab72]">
+                                  Aa
+                                </div>
+                              ) : ev.type === 'l' ? (
+                                <div className="w-10 h-10 aspect-square rounded-lg overflow-hidden border border-white/10 bg-[#1e1f22]">
+                                  <ResilientImage
+                                    src={ev.value}
+                                    alt={ev.channelName}
+                                    fallbackLabel="1:1"
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="w-[72px] h-10 aspect-video rounded-md overflow-hidden border border-white/10 bg-[#1e1f22]">
+                                  <ResilientImage
+                                    src={ev.value}
+                                    alt={ev.channelName}
+                                    fallbackLabel="16:9"
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 font-mono text-xs font-semibold text-[#a3ab72] whitespace-nowrap">
+                              #{ev.channelName}
+                            </td>
+                            <td className="py-3 px-4 text-[#F2F3F5]/90 whitespace-nowrap">
+                              {getEventTypeLabel(locale, ev.type)}
+                            </td>
+                            <td className="py-3 px-4 text-[#b9bbbe] tabular-nums whitespace-nowrap">
+                              {ev.day} {getMonthLabel(locale, ev.month)}
+                            </td>
+                            <td className="py-3 px-4 max-w-[260px]">
+                              <span
+                                title={ev.value}
+                                className="block truncate font-mono text-xs text-[#F2F3F5]/85"
+                              >
+                                {ev.value}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
+                              {isConfirming ? (
+                                <div className="inline-flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={actionBusy}
+                                    onClick={() => void handleDeleteEvent(ev.id)}
+                                    className="px-2.5 py-1.5 rounded bg-[#f04747] text-xs font-semibold text-white cursor-pointer"
+                                  >
+                                    {isFr ? 'Confirmer' : 'Confirm'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteId(null)}
+                                    className="px-2.5 py-1.5 rounded bg-[#1e1f22] border border-white/15 text-xs font-semibold text-[#F2F3F5] cursor-pointer"
+                                  >
+                                    {isFr ? 'Annuler' : 'Cancel'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditForm(ev)}
+                                    aria-label={isFr ? `Modifier ${ev.channelName}` : `Edit ${ev.channelName}`}
+                                    className="p-2 rounded-md text-[#b9bbbe] hover:text-[#F2F3F5] hover:bg-white/10 cursor-pointer"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteId(ev.id)}
+                                    aria-label={isFr ? `Supprimer ${ev.channelName}` : `Delete ${ev.channelName}`}
+                                    className="p-2 rounded-md text-[#b9bbbe] hover:text-[#f04747] hover:bg-[#f04747]/10 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             )}
           </div>
         </div>

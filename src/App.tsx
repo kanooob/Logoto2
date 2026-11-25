@@ -163,7 +163,7 @@ export default function App() {
   const inviteUrl = buildInviteUrl(stats?.clientId);
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#36393f] text-[#F2F3F5]">
+    <div className="min-h-screen flex flex-col bg-[#23252a] text-[#F2F3F5]">
       <Header
         locale={locale}
         route={route}
@@ -171,7 +171,7 @@ export default function App() {
         onNavigate={(target) => navigate(target)}
       />
 
-      <div className={`flex-1 flex flex-col ${route === 'home' ? 'justify-center' : 'justify-start'}`}>
+      <div className="flex-1 flex flex-col justify-start">
         {route === 'home' && (
           <HomeView
             locale={locale}

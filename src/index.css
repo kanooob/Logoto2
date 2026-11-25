@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
 :root {
-  --logoto-canvas: #36393f;
-  --logoto-surface: #2f3136;
-  --logoto-elevated: #292b2f;
-  --logoto-code: #202225;
+  --logoto-canvas: #23252a;
+  --logoto-surface: #2b2d31;
+  --logoto-elevated: #313338;
+  --logoto-code: #1e1f22;
   --logoto-olive: #8c935d;
   --logoto-olive-dark: #767d4f;
   --logoto-olive-light: #a3ab72;
@@ -20,9 +20,10 @@
     background-color: var(--logoto-canvas);
     color: var(--logoto-text);
     scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
   }
 
-  h1, h2, h3, .font-display {
+  h1, h2, h3, h4, .font-display {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   }
 
@@ -39,10 +40,19 @@
   text-wrap: balance;
 }
 
+/* Subtle horizontal scrollbars for mobile tab strips */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 @keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(16px);
+    transform: translateY(14px);
   }
   to {
     opacity: 1;
@@ -51,7 +61,7 @@
 }
 
 .animate-fade-in-up {
-  animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: fadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
