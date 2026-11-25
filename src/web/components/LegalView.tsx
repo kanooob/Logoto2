@@ -7,47 +7,18 @@ interface LegalViewProps {
   onSelectSection?: (hash: '#tos' | '#privacy') => void;
 }
 
-export function LegalView({ locale, onLocaleChange, onSelectSection }: LegalViewProps) {
+export function LegalView({ locale, onSelectSection }: LegalViewProps) {
   const isFr = locale === 'fr';
   const copy = UI_COPY[locale].legal;
 
   return (
-    <div className="max-w-[1320px] w-full mx-auto px-4 sm:px-6 lg:px-10 py-8 lg:py-12 animate-fade-in-up">
-      <div className="flex flex-col md:flex-row gap-8 lg:gap-12">
+    <div className="max-w-[1320px] w-full mx-auto px-4 sm:px-6 lg:px-10 py-6 sm:py-10 lg:py-12 flex-1 animate-fade-in-up">
+      <div className="flex flex-col md:flex-row gap-6 md:gap-8 lg:gap-12">
         <aside className="md:w-60 shrink-0">
-          <div className="md:sticky md:top-24 space-y-5">
-            <div
-              role="group"
-              aria-label={isFr ? 'Langue' : 'Language'}
-              className="inline-flex items-center p-0.5 rounded-lg bg-[#2b2d31] border border-white/10"
-            >
-              <button
-                type="button"
-                onClick={() => onLocaleChange('fr')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                  locale === 'fr'
-                    ? 'bg-[#8c935d] text-[#F2F3F5]'
-                    : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-                }`}
-              >
-                FR
-              </button>
-              <button
-                type="button"
-                onClick={() => onLocaleChange('en')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                  locale === 'en'
-                    ? 'bg-[#8c935d] text-[#F2F3F5]'
-                    : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-                }`}
-              >
-                EN
-              </button>
-            </div>
-
+          <div className="md:sticky md:top-24">
             <nav
               aria-label={isFr ? 'Navigation légale' : 'Legal navigation'}
-              className="flex md:flex-col gap-1.5 overflow-x-auto no-scrollbar pb-2 md:pb-0"
+              className="flex md:flex-col gap-2 overflow-x-auto no-scrollbar pb-2 md:pb-0"
             >
               <a
                 href="#tos"
@@ -57,7 +28,7 @@ export function LegalView({ locale, onLocaleChange, onSelectSection }: LegalView
                     onSelectSection('#tos');
                   }
                 }}
-                className="min-h-[42px] inline-flex items-center px-3.5 py-2 rounded-lg text-sm font-semibold text-[#F2F3F5]/85 hover:text-[#a3ab72] hover:bg-[#2b2d31] border border-transparent hover:border-white/[0.08] transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[44px] inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-[#F2F3F5]/85 hover:text-[#a3ab72] hover:bg-[#2b2d31] border border-transparent hover:border-white/[0.08] transition-colors whitespace-nowrap shrink-0"
               >
                 {copy.tosLink}
               </a>
@@ -69,7 +40,7 @@ export function LegalView({ locale, onLocaleChange, onSelectSection }: LegalView
                     onSelectSection('#privacy');
                   }
                 }}
-                className="min-h-[42px] inline-flex items-center px-3.5 py-2 rounded-lg text-sm font-semibold text-[#F2F3F5]/85 hover:text-[#a3ab72] hover:bg-[#2b2d31] border border-transparent hover:border-white/[0.08] transition-colors whitespace-nowrap shrink-0"
+                className="min-h-[44px] inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold text-[#F2F3F5]/85 hover:text-[#a3ab72] hover:bg-[#2b2d31] border border-transparent hover:border-white/[0.08] transition-colors whitespace-nowrap shrink-0"
               >
                 {copy.privacyLink}
               </a>
@@ -79,7 +50,7 @@ export function LegalView({ locale, onLocaleChange, onSelectSection }: LegalView
 
         <div className="hidden md:block w-px bg-white/[0.08] shrink-0" aria-hidden="true" />
 
-        <main className="flex-1 min-w-0 max-w-3xl space-y-14">
+        <main className="flex-1 min-w-0 w-full md:max-w-4xl space-y-14 pb-8">
           <section id="tos" className="space-y-5 scroll-mt-24">
             <div className="space-y-1.5">
               <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-[#F2F3F5] tracking-tight">

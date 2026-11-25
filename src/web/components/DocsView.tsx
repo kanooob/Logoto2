@@ -14,7 +14,6 @@ export function DocsView({
   locale,
   activeSection,
   onSelectSection,
-  onLocaleChange,
 }: DocsViewProps) {
   const [selectedEvent, setSelectedEvent] = useState<EventCategory>('l');
   const [imageHostTab, setImageHostTab] = useState<'github' | 'imgbb'>('github');
@@ -33,45 +32,14 @@ export function DocsView({
   };
 
   return (
-    <div className="max-w-[1320px] w-full mx-auto px-4 sm:px-6 lg:px-10 py-8 lg:py-12 animate-fade-in-up">
-      <div className="flex flex-col md:flex-row gap-8 lg:gap-12">
+    <div className="max-w-[1320px] w-full mx-auto px-4 sm:px-6 lg:px-10 py-6 sm:py-10 lg:py-12 flex-1 animate-fade-in-up">
+      <div className="flex flex-col md:flex-row gap-6 md:gap-8 lg:gap-12">
         {/* Sidebar (Sticky on Desktop, Horizontal Tab Strip on Mobile) */}
         <aside className="md:w-60 shrink-0">
-          <div className="md:sticky md:top-24 space-y-5">
-            <div className="flex items-center justify-between md:block">
-              <div
-                role="group"
-                aria-label={isFr ? 'Langue' : 'Language'}
-                className="inline-flex items-center p-0.5 rounded-lg bg-[#2b2d31] border border-white/10"
-              >
-                <button
-                  type="button"
-                  onClick={() => onLocaleChange('fr')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                    locale === 'fr'
-                      ? 'bg-[#8c935d] text-[#F2F3F5]'
-                      : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-                  }`}
-                >
-                  FR
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onLocaleChange('en')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                    locale === 'en'
-                      ? 'bg-[#8c935d] text-[#F2F3F5]'
-                      : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-                  }`}
-                >
-                  EN
-                </button>
-              </div>
-            </div>
-
+          <div className="md:sticky md:top-24">
             <nav
               aria-label={isFr ? 'Sections de documentation' : 'Documentation sections'}
-              className="flex md:flex-col gap-1.5 overflow-x-auto no-scrollbar pb-2 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0"
+              className="flex md:flex-col gap-2 overflow-x-auto no-scrollbar pb-2 md:pb-0 -mx-4 px-4 md:mx-0 md:px-0"
             >
               {sidebarItems.map((item) => {
                 const active = activeSection === item.id;
@@ -80,7 +48,7 @@ export function DocsView({
                     key={item.id}
                     type="button"
                     onClick={() => onSelectSection(item.id)}
-                    className={`min-h-[42px] text-left px-3.5 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 border ${
+                    className={`min-h-[44px] text-left px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 border ${
                       active
                         ? 'text-[#F2F3F5] bg-[#2b2d31] border-[#8c935d]/60'
                         : 'text-[#b9bbbe] hover:text-[#F2F3F5] hover:bg-white/[0.04] border-transparent'
@@ -97,15 +65,15 @@ export function DocsView({
         {/* Vertical Divider */}
         <div className="hidden md:block w-px bg-white/[0.08] shrink-0" aria-hidden="true" />
 
-        {/* Content Area */}
-        <main className="flex-1 min-w-0 max-w-3xl space-y-6">
+        {/* Content Area - Spacious on Mobile & Desktop */}
+        <main className="flex-1 min-w-0 w-full md:max-w-4xl space-y-6 pb-8">
           {activeSection === 'setup' && (
             <section className="space-y-6">
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-[#F2F3F5] tracking-tight">
                   {isFr ? 'Configuration (Setup)' : 'Configuration (Setup)'}
                 </h1>
-                <p className="text-[15px] sm:text-base text-[#b9bbbe] leading-relaxed">
+                <p className="text-base text-[#b9bbbe] leading-relaxed">
                   {isFr
                     ? "Logoto automatise le changement de logo, de nom, de bannière et d'image d'invitation de votre serveur Discord, sans nécessiter de base de données externe."
                     : "Logoto automates your Discord server's icon, name, banner, and invite image changes with zero external database or complex setup."}
@@ -116,17 +84,17 @@ export function DocsView({
                 <h2 className="font-display text-xl font-bold text-[#a3ab72] pb-2 border-b border-white/[0.08]">
                   {isFr ? 'Premiers pas' : 'Getting Started'}
                 </h2>
-                <p className="text-[15px] text-[#b9bbbe]">
+                <p className="text-[15px] sm:text-base text-[#b9bbbe]">
                   {isFr
                     ? 'Lancez simplement la commande de configuration initiale sur votre serveur :'
                     : 'Run the initial setup command on your Discord server:'}
                 </p>
-                <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="space-y-1.5">
+                <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-2">
                     <code className="inline-block bg-[#1e1f22] border border-white/10 px-2.5 py-1 rounded text-sm font-mono text-[#a3ab72] font-semibold">
                       /setup
                     </code>
-                    <p className="text-sm text-[#F2F3F5]/90 leading-relaxed">
+                    <p className="text-sm sm:text-[15px] text-[#F2F3F5]/90 leading-relaxed">
                       {isFr
                         ? 'Crée automatiquement la catégorie privée Logoto, le salon #log-logoto et configure votre langue et votre fuseau horaire.'
                         : 'Automatically creates the private Logoto category, #log-logoto channel, and sets your language and timezone.'}
@@ -135,7 +103,7 @@ export function DocsView({
                   <button
                     type="button"
                     onClick={() => handleCopy('/setup')}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 min-h-[40px] rounded-lg bg-[#1e1f22] hover:bg-[#313338] border border-white/10 text-xs font-semibold text-[#F2F3F5] cursor-pointer shrink-0 self-start sm:self-center"
+                    className="inline-flex items-center justify-center gap-1.5 h-10 px-4 rounded-lg bg-[#1e1f22] hover:bg-[#313338] border border-white/10 text-xs font-semibold text-[#F2F3F5] cursor-pointer shrink-0 self-start sm:self-center"
                   >
                     {copiedCmd === '/setup' ? (
                       <>
@@ -152,7 +120,7 @@ export function DocsView({
                 </div>
               </div>
 
-              <div className="rounded-xl bg-[#2b2d31] border border-[#8c935d]/40 p-5 space-y-3 text-sm sm:text-[15px] text-[#F2F3F5]/90 leading-relaxed">
+              <div className="rounded-xl bg-[#2b2d31] border border-[#8c935d]/40 p-5 sm:p-6 space-y-3 text-[15px] text-[#F2F3F5]/90 leading-relaxed">
                 <p className="font-semibold text-[#a3ab72]">
                   {isFr ? 'Note importante : conservation de #log-logoto' : 'Important: keep #log-logoto'}
                 </p>
@@ -172,18 +140,18 @@ export function DocsView({
 
           {activeSection === 'how-it-works' && (
             <section className="space-y-6">
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-[#F2F3F5] tracking-tight">
                   {isFr ? 'Fonctionnement Général' : 'General Operation'}
                 </h1>
-                <p className="text-[15px] sm:text-base text-[#b9bbbe] leading-relaxed">
+                <p className="text-base text-[#b9bbbe] leading-relaxed">
                   {isFr
                     ? 'Logoto lit de manière autonome les salons textuels de votre catégorie privée Logoto pour planifier et exécuter vos mises à jour visuelles.'
                     : 'Logoto autonomously reads the text channels inside your private Logoto category to schedule and apply your visual updates.'}
                 </p>
               </div>
 
-              <div className="rounded-xl bg-[#2b2d31] border border-[#8c935d]/40 p-5 text-sm sm:text-[15px] leading-relaxed space-y-1.5">
+              <div className="rounded-xl bg-[#2b2d31] border border-[#8c935d]/40 p-5 sm:p-6 text-[15px] leading-relaxed space-y-1.5">
                 <p className="font-semibold text-[#a3ab72]">
                   {isFr ? 'Planification à 00h00 heure locale' : 'Midnight local execution'}
                 </p>
@@ -198,7 +166,7 @@ export function DocsView({
                 <h2 className="font-display text-xl font-bold text-[#a3ab72] pb-2 border-b border-white/[0.08]">
                   {isFr ? 'Règles de priorité et limites' : 'Priority Rules and Limits'}
                 </h2>
-                <p className="text-sm sm:text-[15px] text-[#b9bbbe]">
+                <p className="text-[15px] text-[#b9bbbe]">
                   {isFr
                     ? "Pour garantir la stabilité du serveur et respecter les quotas de l'API Discord, Logoto applique trois règles :"
                     : 'To keep your server stable and respect Discord API rate limits, Logoto enforces three rules:'}
@@ -229,16 +197,16 @@ export function DocsView({
                   ].map((rule) => (
                     <li
                       key={rule.num}
-                      className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-4 sm:p-5 flex gap-4"
+                      className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-5 flex gap-4"
                     >
-                      <span className="font-mono text-xs font-bold text-[#a3ab72] pt-0.5 tabular-nums shrink-0">
+                      <span className="font-mono text-xs font-bold text-[#a3ab72] pt-1 tabular-nums shrink-0">
                         {rule.num}
                       </span>
                       <div className="space-y-1">
-                        <h3 className="font-semibold text-[#F2F3F5] text-sm sm:text-base">
-                          {rule.title}
-                        </h3>
-                        <p className="text-sm text-[#b9bbbe] leading-relaxed">{rule.desc}</p>
+                        <h3 className="font-semibold text-[#F2F3F5] text-base">{rule.title}</h3>
+                        <p className="text-sm sm:text-[15px] text-[#b9bbbe] leading-relaxed">
+                          {rule.desc}
+                        </p>
                       </div>
                     </li>
                   ))}
@@ -249,11 +217,11 @@ export function DocsView({
 
           {activeSection === 'timezone' && (
             <section className="space-y-6">
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-[#F2F3F5] tracking-tight">
                   {isFr ? 'Fuseau Horaire (Timezone)' : 'Timezone Configuration'}
                 </h1>
-                <p className="text-[15px] sm:text-base text-[#b9bbbe] leading-relaxed">
+                <p className="text-base text-[#b9bbbe] leading-relaxed">
                   {isFr
                     ? "Par défaut, Logoto déclenche les modifications du serveur à 00h00 UTC. Vous pouvez choisir un fuseau IANA (avec gestion automatique de l'heure d'été) ou un décalage fixe UTC± lors de /setup ou via /settings."
                     : 'By default, Logoto triggers server updates at 00:00 UTC. You can select an IANA timezone (with automatic Daylight Saving Time) or a fixed UTC± offset during /setup or via /settings.'}
@@ -272,7 +240,10 @@ export function DocsView({
                     <div className="flex flex-wrap gap-2 font-mono text-xs text-[#a3ab72]">
                       {['Europe/Paris', 'Europe/London', 'America/Toronto', 'America/New_York', 'UTC'].map(
                         (tz) => (
-                          <code key={tz} className="bg-[#1e1f22] px-2.5 py-1 rounded border border-white/[0.06]">
+                          <code
+                            key={tz}
+                            className="bg-[#1e1f22] px-2.5 py-1 rounded border border-white/[0.06]"
+                          >
                             {tz}
                           </code>
                         )
@@ -285,7 +256,10 @@ export function DocsView({
                     </h3>
                     <div className="flex flex-wrap gap-2 font-mono text-xs text-[#a3ab72]">
                       {['UTC+1', 'UTC+2', 'UTC-5', '+5:30'].map((offset) => (
-                        <code key={offset} className="bg-[#1e1f22] px-2.5 py-1 rounded border border-white/[0.06]">
+                        <code
+                          key={offset}
+                          className="bg-[#1e1f22] px-2.5 py-1 rounded border border-white/[0.06]"
+                        >
                           {offset}
                         </code>
                       ))}
@@ -294,7 +268,7 @@ export function DocsView({
                 </div>
               </div>
 
-              <div className="rounded-xl bg-[#2b2d31] border border-[#8c935d]/40 p-5 text-sm sm:text-[15px] text-[#b9bbbe] leading-relaxed">
+              <div className="rounded-xl bg-[#2b2d31] border border-[#8c935d]/40 p-5 sm:p-6 text-[15px] text-[#b9bbbe] leading-relaxed">
                 <strong className="text-[#a3ab72] block mb-1">
                   {isFr ? "Exemple d'utilisation" : 'Usage example'}
                 </strong>
@@ -307,11 +281,11 @@ export function DocsView({
 
           {activeSection === 'commands' && (
             <section className="space-y-6">
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-[#F2F3F5] tracking-tight">
                   {isFr ? 'Les Commandes du Bot Logoto' : 'Logoto Bot Commands'}
                 </h1>
-                <p className="text-[15px] sm:text-base text-[#b9bbbe] leading-relaxed">
+                <p className="text-base text-[#b9bbbe] leading-relaxed">
                   {isFr
                     ? 'Liste complète des commandes slash intégrées à Logoto :'
                     : 'Complete list of slash commands built into Logoto:'}
@@ -353,14 +327,12 @@ export function DocsView({
                 ].map((item) => (
                   <div
                     key={item.cmd}
-                    className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-5"
+                    className="p-5 flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-5"
                   >
                     <code className="bg-[#1e1f22] border border-white/10 px-2.5 py-1 rounded text-xs sm:text-sm font-mono font-bold text-[#a3ab72] shrink-0 self-start">
                       {item.cmd}
                     </code>
-                    <p className="text-sm sm:text-[15px] text-[#b9bbbe] leading-relaxed">
-                      {item.desc}
-                    </p>
+                    <p className="text-[15px] text-[#b9bbbe] leading-relaxed">{item.desc}</p>
                   </div>
                 ))}
               </div>
@@ -369,11 +341,11 @@ export function DocsView({
 
           {activeSection === 'events' && (
             <section className="space-y-6">
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-[#F2F3F5] tracking-tight">
                   {isFr ? 'Ajouter un événement' : 'Add a Scheduled Event'}
                 </h1>
-                <p className="text-[15px] sm:text-base text-[#b9bbbe] leading-relaxed">
+                <p className="text-base text-[#b9bbbe] leading-relaxed">
                   {isFr
                     ? 'Depuis /settings ou le Dashboard, créez un salon au format {type}-{jour}-{mois}. Sélectionnez un type ci-dessous :'
                     : 'In /settings or the Web Dashboard, create a channel named {type}-{day}-{month}. Select an event type below:'}
@@ -436,7 +408,7 @@ export function DocsView({
                 })}
               </div>
 
-              <div className="rounded-xl bg-[#2b2d31] border border-[#8c935d]/40 p-5 sm:p-6 space-y-4 text-sm sm:text-[15px] text-[#b9bbbe]">
+              <div className="rounded-xl bg-[#2b2d31] border border-[#8c935d]/40 p-5 sm:p-6 space-y-4 text-[15px] text-[#b9bbbe]">
                 {selectedEvent === 'l' && (
                   <>
                     <h3 className="font-display text-lg sm:text-xl font-bold text-[#F2F3F5]">
@@ -586,11 +558,11 @@ export function DocsView({
 
           {activeSection === 'links' && (
             <section className="space-y-6">
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-[#F2F3F5] tracking-tight">
                   {isFr ? "Obtenir un lien d'image persistant" : 'Getting a Persistent Image Link'}
                 </h1>
-                <p className="text-[15px] sm:text-base text-[#b9bbbe] leading-relaxed">
+                <p className="text-base text-[#b9bbbe] leading-relaxed">
                   {isFr
                     ? "Pour que Logoto puisse appliquer vos logos, bannières ou images d'invitation à l'avenir, l'URL fournie doit rester accessible de manière permanente. Les liens directs Discord expirent rapidement : utilisez un hébergeur permanent."
                     : 'For Logoto to apply your logos, banners, or invite splashes on future dates, the URL must remain permanently reachable. Because Discord CDN links expire quickly, use a permanent host.'}
@@ -606,7 +578,7 @@ export function DocsView({
                   role="tab"
                   aria-selected={imageHostTab === 'github'}
                   onClick={() => setImageHostTab('github')}
-                  className={`px-4 py-2 min-h-[40px] text-xs sm:text-sm font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`h-10 px-4 text-xs sm:text-sm font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     imageHostTab === 'github'
                       ? 'bg-[#8c935d] text-[#F2F3F5]'
                       : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
@@ -619,7 +591,7 @@ export function DocsView({
                   role="tab"
                   aria-selected={imageHostTab === 'imgbb'}
                   onClick={() => setImageHostTab('imgbb')}
-                  className={`px-4 py-2 min-h-[40px] text-xs sm:text-sm font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`h-10 px-4 text-xs sm:text-sm font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                     imageHostTab === 'imgbb'
                       ? 'bg-[#8c935d] text-[#F2F3F5]'
                       : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
@@ -630,11 +602,11 @@ export function DocsView({
               </div>
 
               {imageHostTab === 'github' ? (
-                <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-5 sm:p-6 space-y-4 text-sm sm:text-[15px] text-[#b9bbbe]">
+                <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-5 sm:p-6 space-y-5 text-[15px] text-[#b9bbbe] overflow-hidden">
                   <h3 className="font-display text-lg font-bold text-[#F2F3F5]">
                     {isFr ? 'Héberger via GitHub (Ultra-stable)' : 'Host via GitHub (Ultra-stable)'}
                   </h3>
-                  <ol className="list-decimal pl-5 space-y-2.5">
+                  <ol className="list-decimal pl-5 space-y-3">
                     <li>
                       <strong className="text-[#F2F3F5]">
                         {isFr ? 'Créez un dépôt public :' : 'Create a public repository:'}
@@ -658,26 +630,39 @@ export function DocsView({
                       {isFr
                         ? 'Ouvrez votre image sur GitHub puis cliquez sur "Raw". L’URL doit commencer par :'
                         : 'Open your image on GitHub and click "Raw". The URL should begin with:'}{' '}
-                      <code className="bg-[#1e1f22] px-1.5 py-0.5 rounded text-[#a3ab72] break-all">
+                      <code className="inline-block mt-1 bg-[#1e1f22] px-2 py-0.5 rounded text-xs sm:text-sm text-[#a3ab72] break-all">
                         https://raw.githubusercontent.com/...
                       </code>
                     </li>
                   </ol>
-                  <div className="rounded-lg bg-[#1e1f22] border border-[#8c935d]/40 p-4 text-xs sm:text-sm">
-                    <strong className="text-[#a3ab72] block mb-1">
+                  <div className="rounded-lg bg-[#1e1f22] border border-[#8c935d]/40 p-4 text-xs sm:text-sm space-y-2 overflow-hidden">
+                    <strong className="text-[#a3ab72] block">
                       {isFr ? 'Astuce' : 'Tip'}
                     </strong>
-                    {isFr
-                      ? 'Remplacez github.com/utilisateur/depot/blob/main/image.png par raw.githubusercontent.com/utilisateur/depot/main/image.png'
-                      : 'Replace github.com/user/repo/blob/main/image.png with raw.githubusercontent.com/user/repo/main/image.png'}
+                    <p className="text-[#b9bbbe]">
+                      {isFr ? 'Remplacez :' : 'Replace:'}
+                    </p>
+                    <code className="block bg-[#23252a] px-3 py-2 rounded font-mono text-xs text-[#F2F3F5]/80 break-all">
+                      {isFr
+                        ? 'github.com/utilisateur/depot/blob/main/image.png'
+                        : 'github.com/user/repo/blob/main/image.png'}
+                    </code>
+                    <p className="text-[#b9bbbe]">
+                      {isFr ? 'par :' : 'with:'}
+                    </p>
+                    <code className="block bg-[#23252a] px-3 py-2 rounded font-mono text-xs text-[#a3ab72] break-all">
+                      {isFr
+                        ? 'raw.githubusercontent.com/utilisateur/depot/main/image.png'
+                        : 'raw.githubusercontent.com/user/repo/main/image.png'}
+                    </code>
                   </div>
                 </div>
               ) : (
-                <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-5 sm:p-6 space-y-4 text-sm sm:text-[15px] text-[#b9bbbe]">
+                <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-5 sm:p-6 space-y-4 text-[15px] text-[#b9bbbe]">
                   <h3 className="font-display text-lg font-bold text-[#F2F3F5]">
                     {isFr ? 'Hébergeurs Gratuits (ImgBB / Imgur)' : 'Free Hosts (ImgBB / Imgur)'}
                   </h3>
-                  <ol className="list-decimal pl-5 space-y-2.5">
+                  <ol className="list-decimal pl-5 space-y-3">
                     <li>
                       {isFr ? 'Rendez-vous sur ' : 'Visit '}
                       <a

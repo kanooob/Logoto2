@@ -7,47 +7,18 @@ interface FooterProps {
   onNavigate: (route: PageRoute, hash?: string) => void;
 }
 
-export function Footer({ locale, onLocaleChange, onNavigate }: FooterProps) {
+export function Footer({ locale, onNavigate }: FooterProps) {
   const copy = UI_COPY[locale].footer;
   const year = new Date().getFullYear();
 
   return (
     <footer className="bg-[#1e1f22] border-t border-white/[0.08] mt-auto">
-      <div className="max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-10 py-6 flex flex-col sm:flex-row items-center justify-between gap-5 text-sm text-[#b9bbbe]">
+      <div className="max-w-[1320px] mx-auto px-4 sm:px-6 lg:px-10 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-[#b9bbbe]">
         <p className="tabular-nums text-center sm:text-left">
           &copy; {year} {copy.rights}
         </p>
 
-        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
-          <div
-            role="group"
-            aria-label={locale === 'fr' ? 'Sélection de la langue' : 'Language selector'}
-            className="inline-flex items-center p-0.5 rounded-lg bg-[#2b2d31] border border-white/10"
-          >
-            <button
-              type="button"
-              onClick={() => onLocaleChange('fr')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                locale === 'fr'
-                  ? 'bg-[#8c935d] text-[#F2F3F5]'
-                  : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-              }`}
-            >
-              FR
-            </button>
-            <button
-              type="button"
-              onClick={() => onLocaleChange('en')}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                locale === 'en'
-                  ? 'bg-[#8c935d] text-[#F2F3F5]'
-                  : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-              }`}
-            >
-              EN
-            </button>
-          </div>
-
+        <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
           <a
             href={EXTERNAL_LINKS.betterUptime}
             target="_blank"

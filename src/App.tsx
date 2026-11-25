@@ -168,6 +168,7 @@ export default function App() {
         locale={locale}
         route={route}
         inviteUrl={inviteUrl}
+        onLocaleChange={handleLocaleChange}
         onNavigate={(target) => navigate(target)}
       />
 

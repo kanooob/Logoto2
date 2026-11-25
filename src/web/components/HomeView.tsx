@@ -28,7 +28,6 @@ export function HomeView({
   stats,
   status,
   statsLoading,
-  onLocaleChange,
   onNavigate,
 }: HomeViewProps) {
   const copy = UI_COPY[locale];
@@ -88,41 +87,6 @@ export function HomeView({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12 items-center">
           {/* Left Column: Value Proposition & Primary Action */}
           <div className="lg:col-span-7 space-y-6 text-left">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <p className="text-xs sm:text-sm font-medium text-[#b9bbbe] tracking-normal">
-                {copy.hero.kicker}
-              </p>
-
-              <div
-                role="group"
-                aria-label={isFr ? 'Langue du site' : 'Site language'}
-                className="inline-flex items-center p-0.5 rounded-lg bg-[#2b2d31] border border-white/10"
-              >
-                <button
-                  type="button"
-                  onClick={() => onLocaleChange('fr')}
-                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                    locale === 'fr'
-                      ? 'bg-[#8c935d] text-[#F2F3F5]'
-                      : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-                  }`}
-                >
-                  FR
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onLocaleChange('en')}
-                  className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                    locale === 'en'
-                      ? 'bg-[#8c935d] text-[#F2F3F5]'
-                      : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-                  }`}
-                >
-                  EN
-                </button>
-              </div>
-            </div>
-
             <h1
               id="hero-title"
               className="font-display font-extrabold text-[#F2F3F5] leading-[1.12] tracking-tight text-balance"
@@ -166,7 +130,7 @@ export function HomeView({
               </button>
             </div>
 
-            {/* Quiet Unboxed Telemetry & Proof Strip */}
+            {/* Quiet Unboxed Telemetry Strip */}
             <div className="pt-5 border-t border-white/[0.08] flex flex-wrap items-center gap-x-5 gap-y-2.5 text-xs sm:text-sm text-[#b9bbbe] tabular-nums">
               <div className="inline-flex items-center gap-2">
                 {isBotOnline ? (
@@ -182,14 +146,6 @@ export function HomeView({
                 ·
               </span>
               <span>{serverCountLabel}</span>
-              <span aria-hidden="true" className="text-white/25">
-                ·
-              </span>
-              <span>{copy.hero.midnightLabel}</span>
-              <span aria-hidden="true" className="text-white/25 hidden sm:inline">
-                ·
-              </span>
-              <span className="hidden sm:inline">{copy.hero.zeroDbLabel}</span>
             </div>
           </div>
 
@@ -464,10 +420,7 @@ b-21-6:https://raw.githubusercontent.com/.../summer.jpg`}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
           {copy.workflow.steps.map((step) => (
-            <div
-              key={step.num}
-              className="pt-5 border-t border-white/15 space-y-2.5"
-            >
+            <div key={step.num} className="pt-5 border-t border-white/15 space-y-2.5">
               <span className="font-mono text-xs font-semibold text-[#a3ab72] tabular-nums">
                 {step.num}
               </span>
