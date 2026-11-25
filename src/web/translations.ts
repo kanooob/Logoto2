@@ -1,7 +1,7 @@
 import type { DocSectionId, WebLocale } from './types';
 
 export const ASSETS = {
-  emblem: '/src/assets/images/logoto_emblem_1795533019187.jpg',
+  emblem: '/src/assets/images/logoto_icon.png',
 } as const;
 
 export const EXTERNAL_LINKS = {

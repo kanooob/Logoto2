@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import {
   AlertTriangle,
+  ArrowLeft,
+  CalendarDays,
   Check,
+  ChevronRight,
   Copy,
   Download,
   ExternalLink,
+  Image as ImageIcon,
   LogOut,
   Pencil,
   Plus,
   RefreshCw,
   Search,
   Server,
+  Settings,
   Trash2,
   Upload,
   X,
@@ -99,6 +104,8 @@ interface GuildDetail {
   };
 }
 
+type ServerWorkspaceTab = 'events' | 'bot';
+
 export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   const isFr = locale === 'fr';
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -111,11 +118,13 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [copiedRedirectUri, setCopiedRedirectUri] = useState(false);
 
-  // Guilds & Selected Guild state
+  // Guilds & Selected Guild state (starts null so server selection is shown alone first)
   const [guildsLoading, setGuildsLoading] = useState(false);
   const [guilds, setGuilds] = useState<GuildSummary[]>([]);
+  const [guildSearch, setGuildSearch] = useState('');
   const [botOnline, setBotOnline] = useState(false);
   const [selectedGuildId, setSelectedGuildId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ServerWorkspaceTab>('events');
 
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<GuildDetail | null>(null);
@@ -180,8 +189,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
         setGuilds(data.guilds);
         setSelectedGuildId((prev) => {
           if (prev && data.guilds.some((g) => g.id === prev)) return prev;
-          const firstWithBot = data.guilds.find((g) => g.botPresent);
-          return firstWithBot?.id ?? data.guilds[0]?.id ?? null;
+          return null;
         });
       } catch {
         setBannerMsg({
@@ -298,6 +306,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
               setAuthToken(exData.token);
               setUser(exData.user);
               setAuthError(null);
+              setSelectedGuildId(null);
               await loadGuilds(exData.token);
               return;
             }
@@ -309,6 +318,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
             if (meData.authenticated && meData.user) {
               setUser(meData.user);
               setAuthError(null);
+              setSelectedGuildId(null);
               await loadGuilds(null);
             }
           }
@@ -334,6 +344,24 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
       setDetail(null);
     }
   }, [user, selectedGuildSummary, botOnline, loadGuildDetail]);
+
+  const handleSelectGuild = (guildId: string) => {
+    setSelectedGuildId(guildId);
+    setActiveTab('events');
+    setBannerMsg(null);
+    setSearchQuery('');
+    setTypeFilter('all');
+    setFormOpen(false);
+    setConfirmDeleteId(null);
+  };
+
+  const handleBackToServers = () => {
+    setSelectedGuildId(null);
+    setDetail(null);
+    setBannerMsg(null);
+    setFormOpen(false);
+    setConfirmDeleteId(null);
+  };
 
   const handleDiscordLogin = async () => {
     setAuthError(null);
@@ -439,9 +467,16 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
       }
       setDetail(data);
       setCustomTzInput(data.config.timezone);
+      setGuilds((prev) =>
+        prev.map((g) =>
+          g.id === detail.guild.id
+            ? { ...g, timezone: data.config.timezone, locale: data.config.locale }
+            : g
+        )
+      );
       setBannerMsg({
         kind: 'ok',
-        text: isFr ? 'Configuration Discord mise à jour.' : 'Discord configuration updated.',
+        text: isFr ? 'Configuration du bot mise à jour.' : 'Bot configuration updated.',
       });
     } finally {
       setActionBusy(false);
@@ -652,6 +687,12 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
     }
   };
 
+  const filteredGuilds = useMemo(() => {
+    const q = guildSearch.trim().toLowerCase();
+    if (!q) return guilds;
+    return guilds.filter((g) => g.name.toLowerCase().includes(q));
+  }, [guilds, guildSearch]);
+
   const filteredEvents = useMemo(() => {
     if (!detail) return [];
     const q = searchQuery.trim().toLowerCase();
@@ -679,7 +720,7 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
   // Unauthenticated Discord OAuth2 Screen
   if (!user) {
     return (
-      <div className="max-w-[680px] mx-auto px-6 py-16">
+      <div className="max-w-[680px] mx-auto px-6 py-16 animate-fade-in-up">
         <div className="rounded-xl bg-[#2f3136] border border-white/10 p-8 space-y-6 text-center">
           <div className="space-y-2">
             <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-[#F2F3F5]">
@@ -753,10 +794,13 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
                     <button
                       type="button"
                       onClick={() => {
-                        void navigator.clipboard.writeText(authConfig.redirectUri).then(() => {
-                          setCopiedRedirectUri(true);
-                          window.setTimeout(() => setCopiedRedirectUri(false), 1800);
-                        }).catch(() => {});
+                        void navigator.clipboard
+                          .writeText(authConfig.redirectUri)
+                          .then(() => {
+                            setCopiedRedirectUri(true);
+                            window.setTimeout(() => setCopiedRedirectUri(false), 1800);
+                          })
+                          .catch(() => {});
                       }}
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded bg-[#36393f] hover:bg-[#40444b] border border-white/10 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer shrink-0"
                     >
@@ -782,77 +826,324 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
     );
   }
 
-  // Authenticated Live Discord Dashboard
-  return (
-    <div className="max-w-[1400px] w-full mx-auto px-6 lg:px-12 py-8 space-y-6">
-      {/* Top User & Workspace Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/10">
-        <div className="flex items-center gap-3.5">
-          {user.avatarUrl ? (
-            <ResilientImage
-              src={user.avatarUrl}
-              alt={user.username}
-              fallbackLabel={user.username.slice(0, 2).toUpperCase()}
-              className="w-10 h-10 rounded-full object-cover border border-white/15 shrink-0"
-            />
+  // Reusable User & Account Bar
+  const renderAccountBar = () => (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-white/10">
+      <div className="flex items-center gap-3.5">
+        {user.avatarUrl ? (
+          <ResilientImage
+            src={user.avatarUrl}
+            alt={user.username}
+            fallbackLabel={user.username.slice(0, 2).toUpperCase()}
+            className="w-10 h-10 rounded-full object-cover border border-white/15 shrink-0"
+          />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-[#8c935d]/25 border border-[#8c935d]/40 flex items-center justify-center font-bold text-sm text-[#a3ab72] shrink-0">
+            {user.username.slice(0, 2).toUpperCase()}
+          </div>
+        )}
+        <div>
+          <h1 className="font-display text-xl font-bold text-[#F2F3F5]">
+            {user.globalName || user.username}
+          </h1>
+          <p className="text-xs text-[#b9bbbe] font-mono">@{user.username}</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div
+          role="group"
+          aria-label={isFr ? 'Langue du site' : 'Site language'}
+          className="inline-flex items-center p-0.5 rounded-lg bg-[#2f3136] border border-white/10"
+        >
+          <button
+            type="button"
+            onClick={() => onLocaleChange('fr')}
+            className={`px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+              locale === 'fr' ? 'bg-[#8c935d] text-[#F2F3F5]' : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
+            }`}
+          >
+            FR
+          </button>
+          <button
+            type="button"
+            onClick={() => onLocaleChange('en')}
+            className={`px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+              locale === 'en' ? 'bg-[#8c935d] text-[#F2F3F5]' : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
+            }`}
+          >
+            EN
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void loadGuilds()}
+          disabled={guildsLoading}
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#2f3136] hover:bg-[#292b2f] border border-white/10 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${guildsLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+          <span>{isFr ? 'Actualiser' : 'Refresh'}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#2f3136] hover:bg-[#f04747]/15 border border-white/10 hover:border-[#f04747]/40 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer"
+        >
+          <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+          <span>{isFr ? 'Déconnexion' : 'Logout'}</span>
+        </button>
+      </div>
+    </div>
+  );
+
+  // =========================================================================
+  // STEP 1: STANDALONE SERVER SELECTION SCREEN (ALONE ON THE PAGE)
+  // =========================================================================
+  if (!selectedGuildSummary) {
+    return (
+      <div className="max-w-[1160px] w-full mx-auto px-6 lg:px-10 py-8 space-y-6 animate-fade-in-up">
+        {renderAccountBar()}
+
+        {bannerMsg && (
+          <div
+            role="status"
+            className={`flex items-center justify-between gap-4 px-4 py-3 rounded-lg border text-sm ${
+              bannerMsg.kind === 'ok'
+                ? 'bg-[#2f3136] border-[#8c935d]/50 text-[#F2F3F5]'
+                : 'bg-[#f04747]/10 border-[#f04747]/50 text-[#F2F3F5]'
+            }`}
+          >
+            <span>{bannerMsg.text}</span>
+            <button
+              type="button"
+              onClick={() => setBannerMsg(null)}
+              aria-label={isFr ? 'Fermer' : 'Dismiss'}
+              className="text-[#b9bbbe] hover:text-[#F2F3F5] cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {!botOnline && (
+          <div className="rounded-lg bg-[#2f3136] border border-[#f04747]/40 px-4 py-3 text-sm text-[#F2F3F5] flex items-center gap-3">
+            <AlertTriangle className="w-4 h-4 text-[#f04747] shrink-0" aria-hidden="true" />
+            <span>
+              {isFr
+                ? 'Le bot Discord est hors ligne côté serveur (TOKEN non connecté). Connectez le bot pour lire et modifier les salons en direct.'
+                : 'The Discord bot is currently offline on the server (TOKEN not connected). Connect the bot to read and edit Discord channels live.'}
+            </span>
+          </div>
+        )}
+
+        <section className="space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="font-display text-2xl font-extrabold text-[#F2F3F5]">
+                {isFr ? 'Sélectionnez un serveur Discord' : 'Select a Discord Server'}
+              </h2>
+              <p className="text-sm text-[#b9bbbe] mt-1">
+                {isFr
+                  ? 'Choisissez le serveur que vous souhaitez initialiser ou configurer.'
+                  : 'Choose the server you want to initialize or configure.'}
+              </p>
+            </div>
+
+            {guilds.length > 0 && (
+              <div className="relative w-full sm:w-72">
+                <Search
+                  className="w-4 h-4 text-[#b9bbbe] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
+                <input
+                  type="search"
+                  value={guildSearch}
+                  onChange={(e) => setGuildSearch(e.target.value)}
+                  placeholder={isFr ? 'Rechercher un serveur…' : 'Search servers…'}
+                  className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-[#2f3136] border border-white/10 text-sm text-[#F2F3F5] focus:border-[#a3ab72] focus:outline-none"
+                />
+              </div>
+            )}
+          </div>
+
+          {guildsLoading && guilds.length === 0 ? (
+            <div className="rounded-xl bg-[#2f3136] border border-white/10 p-12 text-center text-sm text-[#b9bbbe]">
+              {isFr ? 'Chargement de vos serveurs Discord…' : 'Loading your Discord servers…'}
+            </div>
+          ) : guilds.length === 0 ? (
+            <div className="rounded-xl bg-[#2f3136] border border-white/10 p-12 text-center text-sm text-[#b9bbbe]">
+              {isFr
+                ? 'Aucun serveur trouvé avec les permissions Administrateur ou Gérer le serveur.'
+                : 'No servers found with Administrator or Manage Server permission.'}
+            </div>
+          ) : filteredGuilds.length === 0 ? (
+            <div className="rounded-xl bg-[#2f3136] border border-white/10 p-12 text-center text-sm text-[#b9bbbe]">
+              {isFr ? 'Aucun serveur ne correspond à votre recherche.' : 'No servers match your search.'}
+            </div>
           ) : (
-            <div className="w-10 h-10 rounded-full bg-[#8c935d]/25 border border-[#8c935d]/40 flex items-center justify-center font-bold text-sm text-[#a3ab72] shrink-0">
-              {user.username.slice(0, 2).toUpperCase()}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredGuilds.map((g) => {
+                const statusSummary = g.botPresent
+                  ? g.configured
+                    ? `${g.timezone ?? 'UTC'} · ${(g.locale ?? 'en').toUpperCase()}`
+                    : isFr
+                      ? 'À initialiser (/setup)'
+                      : 'Needs /setup'
+                  : isFr
+                    ? 'Bot non ajouté'
+                    : 'Bot not added';
+
+                const actionLabel = g.botPresent
+                  ? g.configured
+                    ? isFr
+                      ? 'Gérer'
+                      : 'Manage'
+                    : isFr
+                      ? 'Initialiser'
+                      : 'Setup'
+                  : isFr
+                    ? 'Inviter'
+                    : 'Invite';
+
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => handleSelectGuild(g.id)}
+                    className="group text-left rounded-xl bg-[#2f3136] border border-white/10 hover:border-[#8c935d] p-5 flex items-center justify-between gap-4 transition-all duration-150 hover:-translate-y-0.5 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      {g.iconUrl ? (
+                        <ResilientImage
+                          src={g.iconUrl}
+                          alt={g.name}
+                          fallbackLabel={g.name.slice(0, 2).toUpperCase()}
+                          className="w-12 h-12 rounded-xl object-cover shrink-0 border border-white/10"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-[#36393f] border border-white/10 flex items-center justify-center text-sm font-bold text-[#a3ab72] shrink-0">
+                          {g.name.slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-display text-base font-bold text-[#F2F3F5] truncate group-hover:text-[#a3ab72] transition-colors">
+                          {g.name}
+                        </p>
+                        <p className="text-xs text-[#b9bbbe] truncate mt-0.5">{statusSummary}</p>
+                      </div>
+                    </div>
+
+                    <div className="inline-flex items-center gap-1 text-xs font-bold text-[#a3ab72] shrink-0">
+                      <span>{actionLabel}</span>
+                      <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
-          <div>
-            <h1 className="font-display text-xl font-bold text-[#F2F3F5]">
-              {user.globalName || user.username}
-            </h1>
-            <p className="text-xs text-[#b9bbbe] font-mono">@{user.username}</p>
+        </section>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // STEP 2: DEDICATED SELECTED SERVER WORKSPACE
+  // =========================================================================
+  return (
+    <div className="max-w-[1280px] w-full mx-auto px-6 lg:px-10 py-8 space-y-6 animate-fade-in-up">
+      {renderAccountBar()}
+
+      {/* Server Contextual Header + Back to Server Selection */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl bg-[#2f3136] border border-white/10 p-5">
+        <div className="flex items-center gap-4 min-w-0">
+          <button
+            type="button"
+            onClick={handleBackToServers}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#36393f] hover:bg-[#292b2f] border border-white/10 text-xs font-bold text-[#F2F3F5] transition-colors cursor-pointer shrink-0"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 text-[#a3ab72]" aria-hidden="true" />
+            <span>{isFr ? 'Serveurs' : 'Servers'}</span>
+          </button>
+
+          <div className="flex items-center gap-3 min-w-0">
+            {selectedGuildSummary.iconUrl ? (
+              <ResilientImage
+                src={selectedGuildSummary.iconUrl}
+                alt={selectedGuildSummary.name}
+                fallbackLabel={selectedGuildSummary.name.slice(0, 2).toUpperCase()}
+                className="w-10 h-10 rounded-xl object-cover shrink-0 border border-white/10"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-[#36393f] border border-white/10 flex items-center justify-center text-xs font-bold text-[#a3ab72] shrink-0">
+                {selectedGuildSummary.name.slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0">
+              <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#F2F3F5] truncate">
+                {selectedGuildSummary.name}
+              </h2>
+              {detail?.configured && (
+                <p className="text-xs text-[#b9bbbe] tabular-nums truncate">
+                  {isFr ? 'Heure locale :' : 'Local time:'}{' '}
+                  <span className="text-[#F2F3F5] font-medium">{detail.config.localTime}</span>
+                  <span aria-hidden="true" className="mx-2">·</span>
+                  <span>{detail.config.timezone}</span>
+                  <span aria-hidden="true" className="mx-2">·</span>
+                  <span>
+                    {isFr ? `Boost Niveau ${detail.guild.premiumTier}` : `Boost Level ${detail.guild.premiumTier}`}
+                  </span>
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Separated Bot Config vs Events Config Switcher */}
+        {detail?.configured && detail.botPermissionsOk && (
           <div
-            role="group"
-            aria-label={isFr ? 'Langue du site' : 'Site language'}
-            className="inline-flex items-center p-0.5 rounded-lg bg-[#2f3136] border border-white/10"
+            role="tablist"
+            aria-label={isFr ? 'Sections du serveur' : 'Server sections'}
+            className="inline-flex items-center gap-1 p-1 rounded-lg bg-[#292b2f] border border-white/10 shrink-0 self-start sm:self-auto"
           >
             <button
               type="button"
-              onClick={() => onLocaleChange('fr')}
-              className={`px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
-                locale === 'fr' ? 'bg-[#8c935d] text-[#F2F3F5]' : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
+              role="tab"
+              aria-selected={activeTab === 'events'}
+              onClick={() => setActiveTab('events')}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                activeTab === 'events'
+                  ? 'bg-[#8c935d] text-[#F2F3F5]'
+                  : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
               }`}
             >
-              FR
+              <CalendarDays className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>
+                {isFr ? 'Événements' : 'Events'}{' '}
+                <span className="font-mono tabular-nums opacity-85">({detail.events.length})</span>
+              </span>
             </button>
             <button
               type="button"
-              onClick={() => onLocaleChange('en')}
-              className={`px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
-                locale === 'en' ? 'bg-[#8c935d] text-[#F2F3F5]' : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
+              role="tab"
+              aria-selected={activeTab === 'bot'}
+              onClick={() => {
+                setActiveTab('bot');
+                setFormOpen(false);
+              }}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                activeTab === 'bot'
+                  ? 'bg-[#8c935d] text-[#F2F3F5]'
+                  : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
               }`}
             >
-              EN
+              <Settings className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>{isFr ? 'Configuration du bot' : 'Bot Settings'}</span>
             </button>
           </div>
-
-          <button
-            type="button"
-            onClick={() => void loadGuilds()}
-            disabled={guildsLoading}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#2f3136] hover:bg-[#292b2f] border border-white/10 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${guildsLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
-            <span>{isFr ? 'Actualiser' : 'Refresh'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#2f3136] hover:bg-[#f04747]/15 border border-white/10 hover:border-[#f04747]/40 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer"
-          >
-            <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>{isFr ? 'Déconnexion' : 'Logout'}</span>
-          </button>
-        </div>
+        )}
       </div>
 
       {bannerMsg && (
@@ -887,674 +1178,716 @@ export function DashboardView({ locale, onLocaleChange }: DashboardViewProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Sidebar: User's Manageable Servers */}
-        <aside className="lg:col-span-4 rounded-xl bg-[#2f3136] border border-white/10 overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/8 flex items-center justify-between">
-            <h2 className="font-display text-base font-bold text-[#F2F3F5]">
-              {isFr ? 'Vos serveurs Discord' : 'Your Discord Servers'}
-            </h2>
-            <span className="font-mono text-xs text-[#b9bbbe] tabular-nums">{guilds.length}</span>
+      {!selectedGuildSummary.botPresent ? (
+        <div className="rounded-xl bg-[#2f3136] border border-white/10 p-10 text-center space-y-5">
+          <Server className="w-10 h-10 text-[#a3ab72] mx-auto" aria-hidden="true" />
+          <div className="space-y-2">
+            <h3 className="font-display text-xl font-bold text-[#F2F3F5]">
+              {selectedGuildSummary.name}
+            </h3>
+            <p className="text-sm text-[#b9bbbe] max-w-md mx-auto">
+              {isFr
+                ? "Logoto n'est pas encore présent sur ce serveur. Ajoutez-le puis cliquez sur Actualiser."
+                : 'Logoto is not in this server yet. Invite the bot, then click Refresh.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <a
+              href={botInviteForGuild(selectedGuildSummary.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] transition-colors"
+            >
+              <span>{isFr ? 'Ajouter Logoto à ce serveur' : 'Add Logoto to this server'}</span>
+              <ExternalLink className="w-4 h-4" aria-hidden="true" />
+            </a>
+            <button
+              type="button"
+              onClick={() => void loadGuilds()}
+              className="px-4 py-2.5 rounded-lg bg-[#36393f] border border-white/15 text-sm font-semibold text-[#F2F3F5] cursor-pointer"
+            >
+              {isFr ? 'Actualiser' : 'Refresh'}
+            </button>
+          </div>
+        </div>
+      ) : detailLoading || !detail ? (
+        <div className="rounded-xl bg-[#2f3136] border border-white/10 p-10 text-center text-sm text-[#b9bbbe]">
+          {isFr ? 'Chargement des salons Discord…' : 'Loading Discord channels…'}
+        </div>
+      ) : !detail.botPermissionsOk ? (
+        <div className="rounded-xl bg-[#2f3136] border border-[#f04747]/50 p-6 space-y-3">
+          <h3 className="font-display text-lg font-bold text-[#f04747]">
+            {isFr ? 'Permissions du bot manquantes' : 'Missing Bot Permissions'}
+          </h3>
+          <p className="text-sm text-[#F2F3F5]/85 whitespace-pre-line">{detail.botPermissionsError}</p>
+        </div>
+      ) : !detail.configured ? (
+        /* Live /setup Flow */
+        <form
+          onSubmit={handleSetupGuild}
+          className="rounded-xl bg-[#2f3136] border border-white/10 p-6 sm:p-8 space-y-6 max-w-2xl"
+        >
+          <div>
+            <h3 className="font-display text-xl font-bold text-[#F2F3F5]">
+              {isFr
+                ? `Initialiser Logoto sur ${detail.guild.name} (/setup)`
+                : `Initialize Logoto on ${detail.guild.name} (/setup)`}
+            </h3>
+            <p className="text-sm text-[#b9bbbe] mt-1">
+              {isFr
+                ? 'Crée la catégorie privée Logoto et le salon #log-logoto avec votre langue et votre fuseau horaire.'
+                : 'Creates the private Logoto category and #log-logoto channel with your language and timezone.'}
+            </p>
           </div>
 
-          {guildsLoading && guilds.length === 0 ? (
-            <div className="p-6 text-sm text-[#b9bbbe]">
-              {isFr ? 'Chargement des serveurs…' : 'Loading servers…'}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="setup-lang" className="block text-xs font-semibold text-[#b9bbbe] mb-1.5">
+                {isFr ? 'Langue du serveur' : 'Server language'}
+              </label>
+              <select
+                id="setup-lang"
+                value={setupLocale}
+                onChange={(e) => setSetupLocale(e.target.value as WebLocale)}
+                className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
+              >
+                <option value="fr">Français (fr)</option>
+                <option value="en">English (en)</option>
+              </select>
             </div>
-          ) : guilds.length === 0 ? (
-            <div className="p-6 text-sm text-[#b9bbbe]">
-              {isFr
-                ? 'Aucun serveur trouvé avec les permissions Administrateur ou Gérer le serveur.'
-                : 'No servers found with Administrator or Manage Server permission.'}
-            </div>
-          ) : (
-            <div className="divide-y divide-white/8 max-h-[540px] overflow-y-auto">
-              {guilds.map((g) => {
-                const isSelected = g.id === selectedGuildId;
-                return (
-                  <button
-                    key={g.id}
-                    type="button"
-                    onClick={() => setSelectedGuildId(g.id)}
-                    className={`w-full text-left px-4 py-3.5 flex items-center justify-between gap-3 transition-colors cursor-pointer ${
-                      isSelected ? 'bg-[#8c935d]/15' : 'hover:bg-white/[0.03]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {g.iconUrl ? (
-                        <ResilientImage
-                          src={g.iconUrl}
-                          alt={g.name}
-                          fallbackLabel={g.name.slice(0, 2).toUpperCase()}
-                          className="w-9 h-9 rounded-lg object-cover shrink-0"
-                        />
-                      ) : (
-                        <div className="w-9 h-9 rounded-lg bg-[#36393f] border border-white/10 flex items-center justify-center text-xs font-bold text-[#a3ab72] shrink-0">
-                          {g.name.slice(0, 2).toUpperCase()}
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-[#F2F3F5] truncate">{g.name}</p>
-                        <p className="text-xs text-[#b9bbbe] truncate">
-                          {g.botPresent
-                            ? g.configured
-                              ? `${g.timezone ?? 'UTC'} · ${(g.locale ?? 'en').toUpperCase()}`
-                              : isFr
-                                ? 'À initialiser (/setup)'
-                                : 'Needs /setup'
-                            : isFr
-                              ? 'Bot non ajouté'
-                              : 'Bot not added'}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </aside>
 
-        {/* Right Workspace: Selected Guild /setup or /settings */}
-        <section className="lg:col-span-8 space-y-6">
-          {!selectedGuildSummary ? (
-            <div className="rounded-xl bg-[#2f3136] border border-white/10 p-10 text-center text-sm text-[#b9bbbe]">
-              {isFr
-                ? 'Sélectionnez un serveur Discord à gauche pour afficher ses paramètres Logoto.'
-                : 'Select a Discord server on the left to manage its Logoto settings.'}
+            <div>
+              <label htmlFor="setup-tz" className="block text-xs font-semibold text-[#b9bbbe] mb-1.5">
+                {isFr ? 'Fuseau horaire (IANA ou UTC±)' : 'Timezone (IANA or UTC±)'}
+              </label>
+              <input
+                id="setup-tz"
+                type="text"
+                value={setupTz}
+                onChange={(e) => setSetupTz(e.target.value)}
+                list="common-tz-list"
+                className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm font-mono text-[#F2F3F5]"
+              />
+              <datalist id="common-tz-list">
+                {COMMON_TIMEZONES.map((tz) => (
+                  <option key={tz} value={tz} />
+                ))}
+              </datalist>
             </div>
-          ) : !selectedGuildSummary.botPresent ? (
-            <div className="rounded-xl bg-[#2f3136] border border-white/10 p-8 text-center space-y-5">
-              <Server className="w-10 h-10 text-[#a3ab72] mx-auto" aria-hidden="true" />
-              <div className="space-y-2">
-                <h2 className="font-display text-xl font-bold text-[#F2F3F5]">
-                  {selectedGuildSummary.name}
-                </h2>
-                <p className="text-sm text-[#b9bbbe] max-w-md mx-auto">
-                  {isFr
-                    ? "Logoto n'est pas encore présent sur ce serveur. Ajoutez-le puis cliquez sur Actualiser."
-                    : 'Logoto is not in this server yet. Invite the bot, then click Refresh.'}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center justify-center gap-3">
-                <a
-                  href={botInviteForGuild(selectedGuildSummary.id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] transition-colors"
-                >
-                  <span>{isFr ? 'Ajouter Logoto à ce serveur' : 'Add Logoto to this server'}</span>
-                  <ExternalLink className="w-4 h-4" aria-hidden="true" />
-                </a>
-                <button
-                  type="button"
-                  onClick={() => void loadGuilds()}
-                  className="px-4 py-2.5 rounded-lg bg-[#36393f] border border-white/15 text-sm font-semibold text-[#F2F3F5] cursor-pointer"
-                >
-                  {isFr ? 'Actualiser' : 'Refresh'}
-                </button>
-              </div>
-            </div>
-          ) : detailLoading || !detail ? (
-            <div className="rounded-xl bg-[#2f3136] border border-white/10 p-10 text-center text-sm text-[#b9bbbe]">
-              {isFr ? 'Chargement des salons Discord…' : 'Loading Discord channels…'}
-            </div>
-          ) : !detail.botPermissionsOk ? (
-            <div className="rounded-xl bg-[#2f3136] border border-[#f04747]/50 p-6 space-y-3">
-              <h2 className="font-display text-lg font-bold text-[#f04747]">
-                {isFr ? 'Permissions du bot manquantes' : 'Missing Bot Permissions'}
-              </h2>
-              <p className="text-sm text-[#F2F3F5]/85 whitespace-pre-line">
-                {detail.botPermissionsError}
+          </div>
+
+          <button
+            type="submit"
+            disabled={actionBusy}
+            className="px-6 py-2.5 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
+          >
+            {actionBusy
+              ? isFr
+                ? 'Configuration en cours…'
+                : 'Configuring…'
+              : isFr
+                ? 'Initialiser (/setup)'
+                : 'Initialize (/setup)'}
+          </button>
+        </form>
+      ) : activeTab === 'bot' ? (
+        /* =====================================================================
+           TAB 2: BOT CONFIGURATION (COMPLETELY SEPARATED FROM EVENTS)
+           ===================================================================== */
+        <div className="space-y-6">
+          <div className="rounded-xl bg-[#2f3136] border border-white/10 p-6 space-y-6">
+            <div className="pb-4 border-b border-white/8">
+              <h3 className="font-display text-lg font-bold text-[#F2F3F5]">
+                {isFr ? 'Paramètres du bot sur ce serveur' : 'Bot Settings for this Server'}
+              </h3>
+              <p className="text-sm text-[#b9bbbe] mt-1">
+                {isFr
+                  ? 'Ces réglages sont stockés directement dans le sujet de #log-logoto sur Discord.'
+                  : 'These settings are stored directly inside your #log-logoto channel topic on Discord.'}
               </p>
             </div>
-          ) : !detail.configured ? (
-            /* Live /setup Flow */
-            <form
-              onSubmit={handleSetupGuild}
-              className="rounded-xl bg-[#2f3136] border border-white/10 p-6 space-y-6"
-            >
-              <div>
-                <h2 className="font-display text-xl font-bold text-[#F2F3F5]">
-                  {isFr
-                    ? `Initialiser Logoto sur ${detail.guild.name} (/setup)`
-                    : `Initialize Logoto on ${detail.guild.name} (/setup)`}
-                </h2>
-                <p className="text-sm text-[#b9bbbe] mt-1">
-                  {isFr
-                    ? 'Crée la catégorie privée Logoto et le salon #log-logoto avec votre langue et votre fuseau horaire.'
-                    : 'Creates the private Logoto category and #log-logoto channel with your language and timezone.'}
-                </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+              <div className="md:col-span-4 space-y-2">
+                <label className="block text-xs font-semibold text-[#b9bbbe]">
+                  {isFr ? 'Langue du bot' : 'Bot language'}
+                </label>
+                <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#292b2f] border border-white/10">
+                  <button
+                    type="button"
+                    disabled={actionBusy}
+                    onClick={() => void handleUpdateConfig({ locale: 'fr' })}
+                    className={`py-2 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                      detail.config.locale === 'fr'
+                        ? 'bg-[#8c935d] text-[#F2F3F5]'
+                        : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
+                    }`}
+                  >
+                    Français
+                  </button>
+                  <button
+                    type="button"
+                    disabled={actionBusy}
+                    onClick={() => void handleUpdateConfig({ locale: 'en' })}
+                    className={`py-2 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
+                      detail.config.locale === 'en'
+                        ? 'bg-[#8c935d] text-[#F2F3F5]'
+                        : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
+                    }`}
+                  >
+                    English
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="md:col-span-4 space-y-2">
+                <label htmlFor="live-tz-select" className="block text-xs font-semibold text-[#b9bbbe]">
+                  {isFr ? 'Fuseau rapide (IANA)' : 'Quick Timezone'}
+                </label>
+                <select
+                  id="live-tz-select"
+                  disabled={actionBusy}
+                  value={COMMON_TIMEZONES.includes(detail.config.timezone) ? detail.config.timezone : ''}
+                  onChange={(e) => void handleUpdateConfig({ timezone: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
+                >
+                  {!COMMON_TIMEZONES.includes(detail.config.timezone) && (
+                    <option value="">{detail.config.timezone}</option>
+                  )}
+                  {COMMON_TIMEZONES.map((tz) => (
+                    <option key={tz} value={tz}>
+                      {tz}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <form onSubmit={handleCustomTzSubmit} className="md:col-span-4 space-y-2">
+                <label htmlFor="live-tz-custom" className="block text-xs font-semibold text-[#b9bbbe]">
+                  {isFr ? 'Fuseau personnalisé' : 'Custom timezone'}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="live-tz-custom"
+                    type="text"
+                    value={customTzInput}
+                    onChange={(e) => setCustomTzInput(e.target.value)}
+                    className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-[#292b2f] border border-white/10 text-sm font-mono text-[#F2F3F5]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={actionBusy}
+                    className="px-3 py-2 rounded-lg bg-[#36393f] hover:bg-[#8c935d] border border-white/15 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer shrink-0"
+                  >
+                    OK
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div className="pt-4 border-t border-white/8 flex items-center justify-between gap-3">
+              <div className="min-w-0 flex items-center gap-2 text-xs text-[#b9bbbe]">
+                <span className="shrink-0">#log-logoto :</span>
+                <code className="truncate font-mono text-[#a3ab72] bg-[#202225] px-2 py-1 rounded">
+                  {detail.config.topic}
+                </code>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyTopic}
+                aria-label={isFr ? 'Copier le sujet' : 'Copy topic'}
+                className="p-1.5 rounded bg-[#292b2f] border border-white/10 text-[#b9bbbe] hover:text-[#F2F3F5] cursor-pointer shrink-0"
+              >
+                {copiedTopic ? <Check className="w-3.5 h-3.5 text-[#43b581]" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Backup & Restore (.txt) */}
+          <div className="rounded-xl bg-[#2f3136] border border-white/10 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="font-display text-base font-bold text-[#F2F3F5]">
+                {isFr ? 'Sauvegarde & Importation (.txt)' : 'Backup & Restore (.txt)'}
+              </h3>
+              <p className="text-xs text-[#b9bbbe] mt-1">
+                {isFr
+                  ? 'Exportez ou restaurez la configuration complète (fuseau, langue et salons événements).'
+                  : 'Export or restore your full server configuration (timezone, language, and event channels).'}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,.json,text/plain"
+                onChange={handleImportFile}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={actionBusy}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#36393f] hover:bg-[#292b2f] border border-white/15 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Upload className="w-3.5 h-3.5 text-[#a3ab72]" aria-hidden="true" />
+                <span>{isFr ? 'Importer' : 'Import'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleExportTxt()}
+                disabled={actionBusy}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-xs font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>{isFr ? 'Exporter' : 'Export'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* =====================================================================
+           TAB 1: SCHEDULED EVENTS CONFIGURATION (WITH ADAPTED SQUARE/RECT PREVIEW)
+           ===================================================================== */
+        <div className="space-y-6">
+          {/* Events Toolbar */}
+          <div className="rounded-xl bg-[#2f3136] border border-white/10 p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <h3 className="font-display text-lg font-bold text-[#F2F3F5]">
+                {isFr ? 'Événements programmés' : 'Scheduled Events'}{' '}
+                <span className="font-mono text-sm text-[#a3ab72] tabular-nums">
+                  ({detail.events.length})
+                </span>
+              </h3>
+              <button
+                type="button"
+                onClick={openCreateForm}
+                disabled={actionBusy}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] transition-colors cursor-pointer self-start sm:self-auto"
+              >
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                <span>{isFr ? 'Créer un événement' : 'Create event'}</span>
+              </button>
+            </div>
+
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3 border-t border-white/8">
+              <div className="relative flex-1 max-w-sm">
+                <Search
+                  className="w-4 h-4 text-[#b9bbbe] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                  aria-hidden="true"
+                />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={isFr ? 'Rechercher un salon…' : 'Search channel…'}
+                  className="w-full pl-9 pr-3 py-2 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-[#292b2f] border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setTypeFilter('all')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
+                    typeFilter === 'all' ? 'bg-[#8c935d] text-[#F2F3F5]' : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
+                  }`}
+                >
+                  {isFr ? 'Tous' : 'All'}
+                </button>
+                {EVENT_TYPES.map((tp) => (
+                  <button
+                    key={tp}
+                    type="button"
+                    onClick={() => setTypeFilter(tp)}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
+                      typeFilter === tp ? 'bg-[#8c935d] text-[#F2F3F5]' : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
+                    }`}
+                  >
+                    {tp === 'l'
+                      ? 'Logo'
+                      : tp === 'n'
+                        ? isFr
+                          ? 'Nom'
+                          : 'Name'
+                        : tp === 'b'
+                          ? isFr
+                            ? 'Bannière'
+                            : 'Banner'
+                          : 'Splash'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Create / Edit Event Form with Adapted Square (Logo) vs Rectangle (Banner/Splash) Preview */}
+          {formOpen && (
+            <form
+              onSubmit={handleEventSubmit}
+              className="rounded-xl bg-[#2f3136] border border-[#a3ab72]/60 p-6 space-y-5"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
                 <div>
-                  <label htmlFor="setup-lang" className="block text-xs font-semibold text-[#b9bbbe] mb-1.5">
-                    {isFr ? 'Langue du serveur' : 'Server language'}
+                  <h4 className="font-display text-base font-bold text-[#F2F3F5]">
+                    {editingChannelId
+                      ? isFr
+                        ? "Modifier l'événement Discord"
+                        : 'Edit Discord Event'
+                      : isFr
+                        ? 'Créer un salon événement Discord'
+                        : 'Create Discord Event Channel'}
+                  </h4>
+                  <p className="text-xs text-[#b9bbbe] mt-0.5">
+                    {isFr ? 'Salon cible :' : 'Target channel:'}{' '}
+                    <code className="font-mono text-[#a3ab72]">#{previewChannelName}</code>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormOpen(false)}
+                  className="p-1.5 text-[#b9bbbe] hover:text-[#F2F3F5] cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label htmlFor="live-ev-type" className="block text-xs font-semibold text-[#b9bbbe] mb-1.5">
+                    1. Type
                   </label>
                   <select
-                    id="setup-lang"
-                    value={setupLocale}
-                    onChange={(e) => setSetupLocale(e.target.value as WebLocale)}
+                    id="live-ev-type"
+                    value={draftType}
+                    onChange={(e) => setDraftType(e.target.value as EventCategory)}
                     className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
                   >
-                    <option value="fr">Français (fr)</option>
-                    <option value="en">English (en)</option>
+                    {EVENT_TYPES.map((tp) => (
+                      <option key={tp} value={tp}>
+                        {tp} — {getEventTypeLabel(locale, tp)}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label htmlFor="setup-tz" className="block text-xs font-semibold text-[#b9bbbe] mb-1.5">
-                    {isFr ? 'Fuseau horaire (IANA ou UTC±)' : 'Timezone (IANA or UTC±)'}
+                  <label htmlFor="live-ev-month" className="block text-xs font-semibold text-[#b9bbbe] mb-1.5">
+                    {isFr ? '2. Mois' : '2. Month'}
+                  </label>
+                  <select
+                    id="live-ev-month"
+                    value={draftMonth}
+                    onChange={(e) => setDraftMonth(Number(e.target.value))}
+                    className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
+                  >
+                    {Array.from({ length: 12 }, (_, idx) => idx + 1).map((m) => (
+                      <option key={m} value={m}>
+                        {m} — {getMonthLabel(locale, m)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="live-ev-day" className="block text-xs font-semibold text-[#b9bbbe] mb-1.5">
+                    {isFr ? '3. Jour (1-31)' : '3. Day (1-31)'}
                   </label>
                   <input
-                    id="setup-tz"
-                    type="text"
-                    value={setupTz}
-                    onChange={(e) => setSetupTz(e.target.value)}
-                    list="common-tz-list"
-                    className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm font-mono text-[#F2F3F5]"
+                    id="live-ev-day"
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={draftDay}
+                    onChange={(e) => setDraftDay(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm font-mono text-[#F2F3F5] tabular-nums"
                   />
-                  <datalist id="common-tz-list">
-                    {COMMON_TIMEZONES.map((tz) => (
-                      <option key={tz} value={tz} />
-                    ))}
-                  </datalist>
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={actionBusy}
-                className="px-6 py-2.5 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
-              >
-                {actionBusy
-                  ? isFr
-                    ? 'Configuration en cours…'
-                    : 'Configuring…'
-                  : isFr
-                    ? 'Initialiser (/setup)'
-                    : 'Initialize (/setup)'}
-              </button>
-            </form>
-          ) : (
-            /* Live /settings Control Panel */
-            <div className="space-y-6">
-              {/* Server Config Card */}
-              <div className="rounded-xl bg-[#2f3136] border border-white/10 p-6 space-y-5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/8">
-                  <div>
-                    <h2 className="font-display text-xl font-bold text-[#F2F3F5]">
-                      {detail.guild.name}
-                    </h2>
-                    <p className="text-xs text-[#b9bbbe] mt-1 tabular-nums">
-                      {isFr ? 'Heure locale :' : 'Local time:'}{' '}
-                      <span className="text-[#F2F3F5] font-medium">{detail.config.localTime}</span>
-                      <span aria-hidden="true" className="mx-2">·</span>
-                      <span>
-                        {isFr ? `Boost Niveau ${detail.guild.premiumTier}` : `Boost Level ${detail.guild.premiumTier}`}
-                      </span>
-                    </p>
-                  </div>
+              {draftType === 'b' && detail.guild.premiumTier < 2 && (
+                <p className="text-xs text-[#f0b232]">
+                  {isFr
+                    ? `Boost Niveau 2 requis pour les bannières (serveur actuellement au niveau ${detail.guild.premiumTier}).`
+                    : `Boost Level 2 required for banners (server is currently Level ${detail.guild.premiumTier}).`}
+                </p>
+              )}
+              {draftType === 'i' && detail.guild.premiumTier < 1 && (
+                <p className="text-xs text-[#f0b232]">
+                  {isFr
+                    ? `Boost Niveau 1 requis pour les images d'invitation (serveur actuellement au niveau ${detail.guild.premiumTier}).`
+                    : `Boost Level 1 required for invite splashes (server is currently Level ${detail.guild.premiumTier}).`}
+                </p>
+              )}
 
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".txt,.json,text/plain"
-                      onChange={handleImportFile}
-                      className="hidden"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={actionBusy}
-                      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#36393f] hover:bg-[#292b2f] border border-white/15 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      <Upload className="w-3.5 h-3.5 text-[#a3ab72]" aria-hidden="true" />
-                      <span>{isFr ? 'Importer' : 'Import'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleExportTxt()}
-                      disabled={actionBusy}
-                      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-xs font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      <Download className="w-3.5 h-3.5" aria-hidden="true" />
-                      <span>{isFr ? 'Exporter' : 'Export'}</span>
-                    </button>
-                  </div>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="live-ev-val" className="block text-xs font-semibold text-[#b9bbbe] mb-1.5">
+                    {draftType === 'n'
+                      ? isFr
+                        ? '4. Nouveau nom du serveur (2 à 100 caractères)'
+                        : '4. New server name (2 to 100 characters)'
+                      : isFr
+                        ? "4. URL HTTPS directe de l'image"
+                        : '4. Direct HTTPS image URL'}
+                  </label>
+                  <input
+                    id="live-ev-val"
+                    type="text"
+                    value={draftValue}
+                    onChange={(e) => setDraftValue(e.target.value)}
+                    placeholder={draftType === 'n' ? 'Mon Serveur' : 'https://raw.githubusercontent.com/...'}
+                    className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
+                  />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
-                  <div className="md:col-span-4 space-y-2">
-                    <label className="block text-xs font-semibold text-[#b9bbbe]">
-                      {isFr ? 'Langue du bot' : 'Bot language'}
-                    </label>
-                    <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#292b2f] border border-white/10">
-                      <button
-                        type="button"
-                        disabled={actionBusy}
-                        onClick={() => void handleUpdateConfig({ locale: 'fr' })}
-                        className={`py-2 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
-                          detail.config.locale === 'fr'
-                            ? 'bg-[#8c935d] text-[#F2F3F5]'
-                            : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-                        }`}
-                      >
-                        Français
-                      </button>
-                      <button
-                        type="button"
-                        disabled={actionBusy}
-                        onClick={() => void handleUpdateConfig({ locale: 'en' })}
-                        className={`py-2 rounded-md text-xs font-semibold transition-colors cursor-pointer ${
-                          detail.config.locale === 'en'
-                            ? 'bg-[#8c935d] text-[#F2F3F5]'
-                            : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-                        }`}
-                      >
-                        English
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="md:col-span-4 space-y-2">
-                    <label htmlFor="live-tz-select" className="block text-xs font-semibold text-[#b9bbbe]">
-                      {isFr ? 'Fuseau rapide (IANA)' : 'Quick Timezone'}
-                    </label>
-                    <select
-                      id="live-tz-select"
-                      disabled={actionBusy}
-                      value={COMMON_TIMEZONES.includes(detail.config.timezone) ? detail.config.timezone : ''}
-                      onChange={(e) => void handleUpdateConfig({ timezone: e.target.value })}
-                      className="w-full px-3 py-2 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
-                    >
-                      {!COMMON_TIMEZONES.includes(detail.config.timezone) && (
-                        <option value="">{detail.config.timezone}</option>
-                      )}
-                      {COMMON_TIMEZONES.map((tz) => (
-                        <option key={tz} value={tz}>
-                          {tz}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <form onSubmit={handleCustomTzSubmit} className="md:col-span-4 space-y-2">
-                    <label htmlFor="live-tz-custom" className="block text-xs font-semibold text-[#b9bbbe]">
-                      {isFr ? 'Fuseau personnalisé' : 'Custom timezone'}
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        id="live-tz-custom"
-                        type="text"
-                        value={customTzInput}
-                        onChange={(e) => setCustomTzInput(e.target.value)}
-                        className="flex-1 min-w-0 px-3 py-2 rounded-lg bg-[#292b2f] border border-white/10 text-sm font-mono text-[#F2F3F5]"
+                {/* Adapted Preview Container: Square (1:1) for Logo vs Rectangle (16:9) for Banner/Splash */}
+                {draftType === 'n' ? (
+                  <div className="rounded-lg bg-[#292b2f] border border-white/10 p-4 flex items-center gap-3.5">
+                    {detail.guild.iconUrl ? (
+                      <ResilientImage
+                        src={detail.guild.iconUrl}
+                        alt={detail.guild.name}
+                        fallbackLabel={detail.guild.name.slice(0, 2).toUpperCase()}
+                        className="w-11 h-11 rounded-xl object-cover shrink-0 border border-white/10"
                       />
-                      <button
-                        type="submit"
-                        disabled={actionBusy}
-                        className="px-3 py-2 rounded-lg bg-[#36393f] hover:bg-[#8c935d] border border-white/15 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer shrink-0"
-                      >
-                        OK
-                      </button>
-                    </div>
-                  </form>
-                </div>
-
-                <div className="pt-3 border-t border-white/8 flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex items-center gap-2 text-xs text-[#b9bbbe]">
-                    <span className="shrink-0">#log-logoto :</span>
-                    <code className="truncate font-mono text-[#a3ab72] bg-[#202225] px-2 py-1 rounded">
-                      {detail.config.topic}
-                    </code>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleCopyTopic}
-                    aria-label={isFr ? 'Copier le sujet' : 'Copy topic'}
-                    className="p-1.5 rounded bg-[#292b2f] border border-white/10 text-[#b9bbbe] hover:text-[#F2F3F5] cursor-pointer shrink-0"
-                  >
-                    {copiedTopic ? <Check className="w-3.5 h-3.5 text-[#43b581]" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Events Toolbar */}
-              <div className="rounded-xl bg-[#2f3136] border border-white/10 p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <h3 className="font-display text-lg font-bold text-[#F2F3F5]">
-                    {isFr ? 'Événements programmés' : 'Scheduled Events'}{' '}
-                    <span className="font-mono text-sm text-[#a3ab72] tabular-nums">
-                      ({detail.events.length})
-                    </span>
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={openCreateForm}
-                    disabled={actionBusy}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] transition-colors cursor-pointer self-start sm:self-auto"
-                  >
-                    <Plus className="w-4 h-4" aria-hidden="true" />
-                    <span>{isFr ? 'Créer un événement' : 'Create event'}</span>
-                  </button>
-                </div>
-
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3 border-t border-white/8">
-                  <div className="relative flex-1 max-w-sm">
-                    <Search
-                      className="w-4 h-4 text-[#b9bbbe] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                      aria-hidden="true"
-                    />
-                    <input
-                      type="search"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder={isFr ? 'Rechercher un salon…' : 'Search channel…'}
-                      className="w-full pl-9 pr-3 py-2 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
-                    />
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1 p-1 rounded-lg bg-[#292b2f] border border-white/10">
-                    <button
-                      type="button"
-                      onClick={() => setTypeFilter('all')}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
-                        typeFilter === 'all' ? 'bg-[#8c935d] text-[#F2F3F5]' : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-                      }`}
-                    >
-                      {isFr ? 'Tous' : 'All'}
-                    </button>
-                    {EVENT_TYPES.map((tp) => (
-                      <button
-                        key={tp}
-                        type="button"
-                        onClick={() => setTypeFilter(tp)}
-                        className={`px-3 py-1.5 text-xs font-semibold rounded-md cursor-pointer ${
-                          typeFilter === tp ? 'bg-[#8c935d] text-[#F2F3F5]' : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-                        }`}
-                      >
-                        {tp === 'l' ? 'Logo' : tp === 'n' ? (isFr ? 'Nom' : 'Name') : tp === 'b' ? (isFr ? 'Bannière' : 'Banner') : 'Splash'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Create / Edit Event Form */}
-              {formOpen && (
-                <form
-                  onSubmit={handleEventSubmit}
-                  className="rounded-xl bg-[#2f3136] border border-[#a3ab72]/60 p-6 space-y-5"
-                >
-                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                    <div>
-                      <h4 className="font-display text-base font-bold text-[#F2F3F5]">
-                        {editingChannelId
-                          ? isFr
-                            ? "Modifier l'événement Discord"
-                            : 'Edit Discord Event'
-                          : isFr
-                            ? 'Créer un salon événement Discord'
-                            : 'Create Discord Event Channel'}
-                      </h4>
-                      <p className="text-xs text-[#b9bbbe] mt-0.5">
-                        {isFr ? 'Salon cible :' : 'Target channel:'}{' '}
-                        <code className="font-mono text-[#a3ab72]">#{previewChannelName}</code>
+                    ) : (
+                      <div className="w-11 h-11 rounded-xl bg-[#36393f] border border-white/10 flex items-center justify-center text-xs font-bold text-[#a3ab72] shrink-0">
+                        {detail.guild.name.slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-xs text-[#b9bbbe]">
+                        {isFr ? 'Aperçu du nom Discord' : 'Discord Name Preview'}
+                      </p>
+                      <p className="font-display text-base font-bold text-[#F2F3F5] truncate">
+                        {draftValue.trim() || detail.guild.name}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setFormOpen(false)}
-                      className="p-1.5 text-[#b9bbbe] hover:text-[#F2F3F5] cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <label htmlFor="live-ev-type" className="block text-xs font-semibold text-[#b9bbbe] mb-1.5">
-                        1. Type
-                      </label>
-                      <select
-                        id="live-ev-type"
-                        value={draftType}
-                        onChange={(e) => setDraftType(e.target.value as EventCategory)}
-                        className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
-                      >
-                        {EVENT_TYPES.map((tp) => (
-                          <option key={tp} value={tp}>
-                            {tp} — {getEventTypeLabel(locale, tp)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label htmlFor="live-ev-month" className="block text-xs font-semibold text-[#b9bbbe] mb-1.5">
-                        {isFr ? '2. Mois' : '2. Month'}
-                      </label>
-                      <select
-                        id="live-ev-month"
-                        value={draftMonth}
-                        onChange={(e) => setDraftMonth(Number(e.target.value))}
-                        className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
-                      >
-                        {Array.from({ length: 12 }, (_, idx) => idx + 1).map((m) => (
-                          <option key={m} value={m}>
-                            {m} — {getMonthLabel(locale, m)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label htmlFor="live-ev-day" className="block text-xs font-semibold text-[#b9bbbe] mb-1.5">
-                        {isFr ? '3. Jour (1-31)' : '3. Day (1-31)'}
-                      </label>
-                      <input
-                        id="live-ev-day"
-                        type="number"
-                        min={1}
-                        max={31}
-                        value={draftDay}
-                        onChange={(e) => setDraftDay(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm font-mono text-[#F2F3F5] tabular-nums"
-                      />
-                    </div>
-                  </div>
-
-                  {draftType === 'b' && detail.guild.premiumTier < 2 && (
-                    <p className="text-xs text-[#f0b232]">
-                      {isFr
-                        ? `Boost Niveau 2 requis pour les bannières (serveur actuellement au niveau ${detail.guild.premiumTier}).`
-                        : `Boost Level 2 required for banners (server is currently Level ${detail.guild.premiumTier}).`}
-                    </p>
-                  )}
-                  {draftType === 'i' && detail.guild.premiumTier < 1 && (
-                    <p className="text-xs text-[#f0b232]">
-                      {isFr
-                        ? `Boost Niveau 1 requis pour les images d'invitation (serveur actuellement au niveau ${detail.guild.premiumTier}).`
-                        : `Boost Level 1 required for invite splashes (server is currently Level ${detail.guild.premiumTier}).`}
-                    </p>
-                  )}
-
-                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-end">
-                    <div className={draftType !== 'n' ? 'sm:col-span-9' : 'sm:col-span-12'}>
-                      <label htmlFor="live-ev-val" className="block text-xs font-semibold text-[#b9bbbe] mb-1.5">
-                        {draftType === 'n'
+                ) : (
+                  <div className="rounded-lg bg-[#292b2f] border border-white/10 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2 text-xs text-[#b9bbbe]">
+                      <span className="font-semibold text-[#F2F3F5]">
+                        {draftType === 'l'
                           ? isFr
-                            ? '4. Nouveau nom du serveur (2 à 100 caractères)'
-                            : '4. New server name (2 to 100 characters)'
-                          : isFr
-                            ? "4. URL HTTPS directe de l'image"
-                            : '4. Direct HTTPS image URL'}
-                      </label>
-                      <input
-                        id="live-ev-val"
-                        type="text"
-                        value={draftValue}
-                        onChange={(e) => setDraftValue(e.target.value)}
-                        placeholder={draftType === 'n' ? 'Mon Serveur' : 'https://raw.githubusercontent.com/...'}
-                        className="w-full px-3 py-2.5 rounded-lg bg-[#292b2f] border border-white/10 text-sm text-[#F2F3F5]"
-                      />
+                            ? 'Aperçu du logo (Carré 1:1)'
+                            : 'Logo Preview (1:1 Square)'
+                          : draftType === 'b'
+                            ? isFr
+                              ? 'Aperçu de la bannière (Rectangle 16:9)'
+                              : 'Banner Preview (16:9 Rectangle)'
+                            : isFr
+                              ? "Aperçu de l'image d'invitation (Rectangle 16:9)"
+                              : 'Invite Splash Preview (16:9 Rectangle)'}
+                      </span>
+                      <span className="font-mono text-[#a3ab72] tabular-nums">
+                        {draftType === 'l'
+                          ? '512 × 512 px'
+                          : draftType === 'b'
+                            ? '960 × 540 px'
+                            : '1920 × 1080 px'}
+                      </span>
                     </div>
-                    {draftType !== 'n' && (
-                      <div className="sm:col-span-3">
-                        <div className="h-[42px] rounded-lg overflow-hidden border border-white/10 bg-[#292b2f] flex items-center justify-center">
-                          {isSafeImageUrl(draftValue) ? (
-                            <ResilientImage
-                              src={draftValue.trim()}
-                              alt={previewChannelName}
-                              fallbackLabel="Aperçu"
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <span className="text-xs text-[#b9bbbe]">URL</span>
-                          )}
-                        </div>
+
+                    {draftType === 'l' ? (
+                      /* Square 1:1 Logo Preview */
+                      <div className="w-32 h-32 aspect-square rounded-2xl overflow-hidden border border-white/15 bg-[#202225] flex items-center justify-center">
+                        {isSafeImageUrl(draftValue) ? (
+                          <ResilientImage
+                            src={draftValue.trim()}
+                            alt={previewChannelName}
+                            fallbackLabel="1:1"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center gap-1.5 text-[#b9bbbe]">
+                            <ImageIcon className="w-6 h-6 text-[#a3ab72]/70" aria-hidden="true" />
+                            <span className="font-mono text-[11px]">1:1</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* Rectangle 16:9 Banner / Splash Preview */
+                      <div className="w-full max-w-[360px] aspect-video rounded-xl overflow-hidden border border-white/15 bg-[#202225] flex items-center justify-center">
+                        {isSafeImageUrl(draftValue) ? (
+                          <ResilientImage
+                            src={draftValue.trim()}
+                            alt={previewChannelName}
+                            fallbackLabel="16:9"
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center gap-1.5 text-[#b9bbbe]">
+                            <ImageIcon className="w-7 h-7 text-[#a3ab72]/70" aria-hidden="true" />
+                            <span className="font-mono text-xs">16:9</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-
-                  {formError && <p className="text-sm text-[#f04747]">{formError}</p>}
-
-                  <div className="flex justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setFormOpen(false)}
-                      className="px-4 py-2 rounded-lg bg-[#36393f] border border-white/15 text-sm font-semibold text-[#F2F3F5] cursor-pointer"
-                    >
-                      {isFr ? 'Annuler' : 'Cancel'}
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={actionBusy}
-                      className="px-5 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] cursor-pointer disabled:opacity-50"
-                    >
-                      {actionBusy
-                        ? isFr
-                          ? 'Enregistrement…'
-                          : 'Saving…'
-                        : isFr
-                          ? 'Enregistrer sur Discord'
-                          : 'Save to Discord'}
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* Events Table */}
-              <div className="rounded-xl bg-[#2f3136] border border-white/10 overflow-hidden">
-                {filteredEvents.length === 0 ? (
-                  <div className="p-10 text-center space-y-4">
-                    <p className="text-sm text-[#b9bbbe]">
-                      {detail.events.length === 0
-                        ? isFr
-                          ? 'Aucun événement programmé sur ce serveur. Cliquez sur « Créer un événement » pour commencer.'
-                          : 'No scheduled events on this server yet. Click "Create event" to get started.'
-                        : isFr
-                          ? 'Aucun événement ne correspond à votre filtre.'
-                          : 'No events match your current filter.'}
-                    </p>
-                    {detail.events.length === 0 && (
-                      <button
-                        type="button"
-                        onClick={openCreateForm}
-                        className="px-4 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] cursor-pointer"
-                      >
-                        {isFr ? 'Créer un événement' : 'Create event'}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-white/10 bg-[#292b2f]/60 text-xs font-semibold text-[#b9bbbe]">
-                          <th className="py-3 px-4">{isFr ? 'Salon' : 'Channel'}</th>
-                          <th className="py-3 px-4">Type</th>
-                          <th className="py-3 px-4">Date</th>
-                          <th className="py-3 px-4">{isFr ? 'Valeur' : 'Value'}</th>
-                          <th className="py-3 px-4 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/8 text-sm">
-                        {filteredEvents.map((ev) => {
-                          const isConfirming = confirmDeleteId === ev.id;
-                          return (
-                            <tr key={ev.id} className="hover:bg-white/[0.03] transition-colors">
-                              <td className="py-3 px-4 font-mono text-xs font-semibold text-[#a3ab72] whitespace-nowrap">
-                                #{ev.channelName}
-                              </td>
-                              <td className="py-3 px-4 text-[#F2F3F5]/90 whitespace-nowrap">
-                                {getEventTypeLabel(locale, ev.type)}
-                              </td>
-                              <td className="py-3 px-4 text-[#b9bbbe] tabular-nums whitespace-nowrap">
-                                {ev.day} {getMonthLabel(locale, ev.month)}
-                              </td>
-                              <td className="py-3 px-4 max-w-[240px]">
-                                <span
-                                  title={ev.value}
-                                  className="block truncate font-mono text-xs text-[#F2F3F5]/85"
-                                >
-                                  {ev.value}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 text-right whitespace-nowrap">
-                                {isConfirming ? (
-                                  <div className="inline-flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      disabled={actionBusy}
-                                      onClick={() => void handleDeleteEvent(ev.id)}
-                                      className="px-2.5 py-1 rounded bg-[#f04747] text-xs font-semibold text-white cursor-pointer"
-                                    >
-                                      {isFr ? 'Confirmer' : 'Confirm'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setConfirmDeleteId(null)}
-                                      className="px-2.5 py-1 rounded bg-[#36393f] border border-white/15 text-xs font-semibold text-[#F2F3F5] cursor-pointer"
-                                    >
-                                      {isFr ? 'Annuler' : 'Cancel'}
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="inline-flex items-center gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => openEditForm(ev)}
-                                      aria-label={isFr ? `Modifier ${ev.channelName}` : `Edit ${ev.channelName}`}
-                                      className="p-1.5 rounded-md text-[#b9bbbe] hover:text-[#F2F3F5] hover:bg-white/10 cursor-pointer"
-                                    >
-                                      <Pencil className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setConfirmDeleteId(ev.id)}
-                                      aria-label={isFr ? `Supprimer ${ev.channelName}` : `Delete ${ev.channelName}`}
-                                      className="p-1.5 rounded-md text-[#b9bbbe] hover:text-[#f04747] hover:bg-[#f04747]/10 cursor-pointer"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
                 )}
               </div>
-            </div>
+
+              {formError && <p className="text-sm text-[#f04747]">{formError}</p>}
+
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFormOpen(false)}
+                  className="px-4 py-2 rounded-lg bg-[#36393f] border border-white/15 text-sm font-semibold text-[#F2F3F5] cursor-pointer"
+                >
+                  {isFr ? 'Annuler' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionBusy}
+                  className="px-5 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] cursor-pointer disabled:opacity-50"
+                >
+                  {actionBusy
+                    ? isFr
+                      ? 'Enregistrement…'
+                      : 'Saving…'
+                    : isFr
+                      ? 'Enregistrer sur Discord'
+                      : 'Save to Discord'}
+                </button>
+              </div>
+            </form>
           )}
-        </section>
-      </div>
+
+          {/* Events Table */}
+          <div className="rounded-xl bg-[#2f3136] border border-white/10 overflow-hidden">
+            {filteredEvents.length === 0 ? (
+              <div className="p-10 text-center space-y-4">
+                <p className="text-sm text-[#b9bbbe]">
+                  {detail.events.length === 0
+                    ? isFr
+                      ? 'Aucun événement programmé sur ce serveur. Cliquez sur « Créer un événement » pour commencer.'
+                      : 'No scheduled events on this server yet. Click "Create event" to get started.'
+                    : isFr
+                      ? 'Aucun événement ne correspond à votre filtre.'
+                      : 'No events match your current filter.'}
+                </p>
+                {detail.events.length === 0 && (
+                  <button
+                    type="button"
+                    onClick={openCreateForm}
+                    className="px-4 py-2 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-sm font-bold text-[#F2F3F5] cursor-pointer"
+                  >
+                    {isFr ? 'Créer un événement' : 'Create event'}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 bg-[#292b2f]/60 text-xs font-semibold text-[#b9bbbe]">
+                      <th className="py-3 px-4">{isFr ? 'Aperçu' : 'Preview'}</th>
+                      <th className="py-3 px-4">{isFr ? 'Salon' : 'Channel'}</th>
+                      <th className="py-3 px-4">Type</th>
+                      <th className="py-3 px-4">Date</th>
+                      <th className="py-3 px-4">{isFr ? 'Valeur' : 'Value'}</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/8 text-sm">
+                    {filteredEvents.map((ev) => {
+                      const isConfirming = confirmDeleteId === ev.id;
+                      return (
+                        <tr key={ev.id} className="hover:bg-white/[0.03] transition-colors">
+                          <td className="py-2.5 px-4">
+                            {ev.type === 'n' ? (
+                              <div className="w-10 h-10 rounded-lg bg-[#292b2f] border border-white/10 flex items-center justify-center text-xs font-bold text-[#a3ab72]">
+                                Aa
+                              </div>
+                            ) : ev.type === 'l' ? (
+                              <div className="w-10 h-10 aspect-square rounded-lg overflow-hidden border border-white/10 bg-[#202225]">
+                                <ResilientImage
+                                  src={ev.value}
+                                  alt={ev.channelName}
+                                  fallbackLabel="1:1"
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            ) : (
+                              <div className="w-[72px] h-10 aspect-video rounded-md overflow-hidden border border-white/10 bg-[#202225]">
+                                <ResilientImage
+                                  src={ev.value}
+                                  alt={ev.channelName}
+                                  fallbackLabel="16:9"
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-xs font-semibold text-[#a3ab72] whitespace-nowrap">
+                            #{ev.channelName}
+                          </td>
+                          <td className="py-3 px-4 text-[#F2F3F5]/90 whitespace-nowrap">
+                            {getEventTypeLabel(locale, ev.type)}
+                          </td>
+                          <td className="py-3 px-4 text-[#b9bbbe] tabular-nums whitespace-nowrap">
+                            {ev.day} {getMonthLabel(locale, ev.month)}
+                          </td>
+                          <td className="py-3 px-4 max-w-[240px]">
+                            <span
+                              title={ev.value}
+                              className="block truncate font-mono text-xs text-[#F2F3F5]/85"
+                            >
+                              {ev.value}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right whitespace-nowrap">
+                            {isConfirming ? (
+                              <div className="inline-flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  disabled={actionBusy}
+                                  onClick={() => void handleDeleteEvent(ev.id)}
+                                  className="px-2.5 py-1 rounded bg-[#f04747] text-xs font-semibold text-white cursor-pointer"
+                                >
+                                  {isFr ? 'Confirmer' : 'Confirm'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(null)}
+                                  className="px-2.5 py-1 rounded bg-[#36393f] border border-white/15 text-xs font-semibold text-[#F2F3F5] cursor-pointer"
+                                >
+                                  {isFr ? 'Annuler' : 'Cancel'}
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => openEditForm(ev)}
+                                  aria-label={isFr ? `Modifier ${ev.channelName}` : `Edit ${ev.channelName}`}
+                                  className="p-1.5 rounded-md text-[#b9bbbe] hover:text-[#F2F3F5] hover:bg-white/10 cursor-pointer"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(ev.id)}
+                                  aria-label={isFr ? `Supprimer ${ev.channelName}` : `Delete ${ev.channelName}`}
+                                  className="p-1.5 rounded-md text-[#b9bbbe] hover:text-[#f04747] hover:bg-[#f04747]/10 cursor-pointer"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

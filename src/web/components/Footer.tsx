@@ -12,8 +12,8 @@ export function Footer({ locale, onLocaleChange, onNavigate }: FooterProps) {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="bg-[#2f3136] border-t border-white/8 mt-auto">
-      <div className="max-w-[1280px] mx-auto px-6 lg:px-10 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-[#b9bbbe]">
+    <footer className="bg-[#2f3136] border-t border-white/[0.06] mt-auto">
+      <div className="max-w-[1400px] mx-auto px-6 lg:px-[50px] py-5 flex flex-col sm:flex-row items-center justify-between gap-4 text-[14px] text-[#F2F3F5]/70">
         <p className="tabular-nums">
           &copy; {year} {copy.rights}
         </p>

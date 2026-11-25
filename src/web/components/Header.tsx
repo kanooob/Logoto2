@@ -21,8 +21,8 @@ export function Header({ locale, route, inviteUrl, onNavigate }: HeaderProps) {
   };
 
   return (
-    <header className="w-full bg-[#36393f]/95 backdrop-blur-sm border-b border-white/8 sticky top-0 z-40">
-      <div className="max-w-[1400px] mx-auto px-6 lg:px-12 h-[72px] flex items-center justify-between gap-8">
+    <header className="w-full bg-[#36393f] border-b border-white/[0.06] sticky top-0 z-40">
+      <div className="max-w-[1400px] mx-auto px-6 lg:px-[50px] py-5 flex items-center justify-between gap-8">
         {/* Zone 1: Brand mark + wordmark */}
         <button
           type="button"
@@ -33,9 +33,9 @@ export function Header({ locale, route, inviteUrl, onNavigate }: HeaderProps) {
             src={ASSETS.emblem}
             alt="Logo Logoto"
             fallbackLabel="L"
-            className="w-9 h-9 rounded-lg object-cover shrink-0 transition-transform duration-200 group-hover:scale-105"
+            className="w-10 h-10 object-contain shrink-0 transition-transform duration-300 group-hover:rotate-[15deg] group-hover:scale-105"
           />
-          <span className="font-display text-[22px] font-extrabold tracking-tight text-[#F2F3F5] whitespace-nowrap shrink-0">
+          <span className="font-display text-[24px] font-black tracking-[1px] text-[#F2F3F5] whitespace-nowrap shrink-0">
             Logoto
           </span>
         </button>
@@ -43,15 +43,15 @@ export function Header({ locale, route, inviteUrl, onNavigate }: HeaderProps) {
         {/* Zone 2: Clean single-line navigation links */}
         <nav
           aria-label={locale === 'fr' ? 'Navigation principale' : 'Primary navigation'}
-          className="hidden md:flex items-center gap-8 text-[15px] font-semibold"
+          className="hidden md:flex items-center gap-[30px] text-[16px] font-semibold"
         >
           <button
             type="button"
             onClick={() => handleLinkClick('home')}
-            className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a3ab72] ${
+            className={`whitespace-nowrap shrink-0 py-1 transition-all cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a3ab72] ${
               route === 'home'
-                ? 'text-[#a3ab72] border-[#a3ab72]'
-                : 'text-[#F2F3F5]/80 border-transparent hover:text-[#a3ab72]'
+                ? 'text-[#a3ab72] opacity-100'
+                : 'text-[#F2F3F5] opacity-80 hover:opacity-100 hover:text-[#a3ab72]'
             }`}
           >
             {copy.home}
@@ -59,10 +59,10 @@ export function Header({ locale, route, inviteUrl, onNavigate }: HeaderProps) {
           <button
             type="button"
             onClick={() => handleLinkClick('dashboard')}
-            className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a3ab72] ${
+            className={`whitespace-nowrap shrink-0 py-1 transition-all cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a3ab72] ${
               route === 'dashboard'
-                ? 'text-[#a3ab72] border-[#a3ab72]'
-                : 'text-[#F2F3F5]/80 border-transparent hover:text-[#a3ab72]'
+                ? 'text-[#a3ab72] opacity-100'
+                : 'text-[#F2F3F5] opacity-80 hover:opacity-100 hover:text-[#a3ab72]'
             }`}
           >
             {copy.dashboard}
@@ -70,10 +70,10 @@ export function Header({ locale, route, inviteUrl, onNavigate }: HeaderProps) {
           <button
             type="button"
             onClick={() => handleLinkClick('docs')}
-            className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a3ab72] ${
+            className={`whitespace-nowrap shrink-0 py-1 transition-all cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a3ab72] ${
               route === 'docs'
-                ? 'text-[#a3ab72] border-[#a3ab72]'
-                : 'text-[#F2F3F5]/80 border-transparent hover:text-[#a3ab72]'
+                ? 'text-[#a3ab72] opacity-100'
+                : 'text-[#F2F3F5] opacity-80 hover:opacity-100 hover:text-[#a3ab72]'
             }`}
           >
             {copy.docs}
@@ -82,7 +82,7 @@ export function Header({ locale, route, inviteUrl, onNavigate }: HeaderProps) {
             href={EXTERNAL_LINKS.supportInvite}
             target="_blank"
             rel="noopener noreferrer"
-            className="whitespace-nowrap shrink-0 py-1 border-b-2 border-transparent text-[#F2F3F5]/80 hover:text-[#a3ab72] transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a3ab72]"
+            className="whitespace-nowrap shrink-0 py-1 text-[#F2F3F5] opacity-80 hover:opacity-100 hover:text-[#a3ab72] transition-all focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a3ab72]"
           >
             {copy.support}
           </a>
@@ -94,7 +94,7 @@ export function Header({ locale, route, inviteUrl, onNavigate }: HeaderProps) {
             href={inviteUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="hidden sm:inline-flex items-center justify-center px-5 py-2.5 text-sm font-bold rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-[#F2F3F5] transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a3ab72]"
+            className="hidden sm:inline-flex items-center justify-center px-5 py-2.5 text-[15px] font-bold rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-[#F2F3F5] transition-all duration-150 hover:-translate-y-0.5 whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a3ab72]"
           >
             {copy.addBot}
           </a>
