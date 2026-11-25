@@ -63,14 +63,14 @@ export function HomeView({
     activePreset.id === 'autumn'
       ? ASSETS.autumnBanner
       : activePreset.id === 'winter'
-        ? ASSETS.identityGrid
-        : ASSETS.autumnBanner;
+        ? ASSETS.winterBanner
+        : ASSETS.eventBanner;
 
   const previewIconSrc =
     activePreset.id === 'winter'
-      ? ASSETS.winterIcon
+      ? ASSETS.winterBanner
       : activePreset.id === 'event'
-        ? ASSETS.logotoEmblem
+        ? ASSETS.eventBanner
         : ASSETS.emblem;
 
   const isFr = locale === 'fr';

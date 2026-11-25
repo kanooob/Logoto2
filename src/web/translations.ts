@@ -2,10 +2,9 @@ import type { DocSectionId, WebLocale } from './types';
 
 export const ASSETS = {
   emblem: '/src/assets/images/logoto_icon.png',
-  autumnBanner: '/src/assets/images/preview_autumn_banner_1795533019982.jpg',
-  winterIcon: '/src/assets/images/preview_winter_icon_1795533019860.jpg',
-  identityGrid: '/src/assets/images/hero_identity_grid_1795533019391.jpg',
-  logotoEmblem: '/src/assets/images/logoto_emblem_1795533019187.jpg',
+  autumnBanner: '/src/assets/images/real_autumn_banner.jpg',
+  winterBanner: '/src/assets/images/real_winter_banner.jpg',
+  eventBanner: '/src/assets/images/real_event_banner.jpg',
 } as const;
 
 export const EXTERNAL_LINKS = {

@@ -107,9 +107,31 @@ interface GuildDetail {
 type ServerWorkspaceTab = 'events' | 'bot';
 type GuildFilterMode = 'all' | 'configured' | 'unconfigured';
 
+function getTodayDayMonth(timezone?: string): { day: number; month: number } {
+  const now = new Date();
+  if (timezone) {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        day: 'numeric',
+        month: 'numeric',
+      }).formatToParts(now);
+      const dayVal = Number(parts.find((p) => p.type === 'day')?.value);
+      const monthVal = Number(parts.find((p) => p.type === 'month')?.value);
+      if (Number.isInteger(dayVal) && Number.isInteger(monthVal)) {
+        return { day: dayVal, month: monthVal };
+      }
+    } catch {
+      // Fallback to local browser date for fixed UTC offsets or unsupported strings
+    }
+  }
+  return { day: now.getDate(), month: now.getMonth() + 1 };
+}
+
 export function DashboardView({ locale }: DashboardViewProps) {
   const isFr = locale === 'fr';
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const eventFormRef = useRef<HTMLFormElement | null>(null);
 
   // Auth state (Bearer token stored strictly in React memory, never localStorage)
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -140,14 +162,15 @@ export function DashboardView({ locale }: DashboardViewProps) {
   const [customTzInput, setCustomTzInput] = useState<string>('UTC');
   const [copiedTopic, setCopiedTopic] = useState(false);
 
-  // Event filters & CRUD form
+  // Event filters & CRUD form (defaulting to today's date)
+  const initialToday = useMemo(() => getTodayDayMonth(), []);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | EventCategory>('all');
   const [formOpen, setFormOpen] = useState(false);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [draftType, setDraftType] = useState<EventCategory>('l');
-  const [draftMonth, setDraftMonth] = useState<number>(12);
-  const [draftDay, setDraftDay] = useState<string>('25');
+  const [draftMonth, setDraftMonth] = useState<number>(initialToday.month);
+  const [draftDay, setDraftDay] = useState<string>(String(initialToday.day));
   const [draftValue, setDraftValue] = useState<string>('');
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -499,14 +522,22 @@ export function DashboardView({ locale }: DashboardViewProps) {
     void handleUpdateConfig({ timezone: norm });
   };
 
+  const scrollToEventForm = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      eventFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
+
   const openCreateForm = () => {
+    const today = getTodayDayMonth(detail?.config.timezone);
     setEditingChannelId(null);
     setDraftType('l');
-    setDraftMonth(12);
-    setDraftDay('25');
+    setDraftMonth(today.month);
+    setDraftDay(String(today.day));
     setDraftValue('');
     setFormError(null);
     setFormOpen(true);
+    scrollToEventForm();
   };
 
   const openEditForm = (ev: GuildEventItem) => {
@@ -517,6 +548,7 @@ export function DashboardView({ locale }: DashboardViewProps) {
     setDraftValue(ev.value);
     setFormError(null);
     setFormOpen(true);
+    scrollToEventForm();
   };
 
   const parsedDraftDay = /^\d{1,2}$/.test(draftDay.trim()) ? Number(draftDay.trim()) : NaN;
@@ -1480,8 +1512,9 @@ export function DashboardView({ locale }: DashboardViewProps) {
           {/* Create / Edit Event Form */}
           {formOpen && (
             <form
+              ref={eventFormRef}
               onSubmit={handleEventSubmit}
-              className="rounded-xl bg-[#2b2d31] border border-[#a3ab72]/60 p-5 sm:p-6 space-y-5"
+              className="scroll-mt-24 rounded-xl bg-[#2b2d31] border border-[#a3ab72]/60 p-5 sm:p-6 space-y-5"
             >
               <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
                 <div>
