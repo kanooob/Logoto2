@@ -132,7 +132,6 @@ export function DashboardView({ locale }: DashboardViewProps) {
   const isFr = locale === 'fr';
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageUploadInputRef = useRef<HTMLInputElement | null>(null);
-  const quickUploadInputRef = useRef<HTMLInputElement | null>(null);
   const eventFormRef = useRef<HTMLFormElement | null>(null);
 
   // Auth state (Bearer token stored strictly in React memory, never localStorage)
@@ -177,15 +176,11 @@ export function DashboardView({ locale }: DashboardViewProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // Direct image upload state (Discord #log-logoto or free third-party host)
+  // Direct image upload state inside Create/Edit Event form
   const [uploadProvider, setUploadProvider] = useState<'thirdparty' | 'discord'>('thirdparty');
   const [imageUploading, setImageUploading] = useState(false);
   const [uploadStatusMsg, setUploadStatusMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [copiedImageUrl, setCopiedImageUrl] = useState(false);
-  const [quickUploaderOpen, setQuickUploaderOpen] = useState(false);
-  const [quickUploadedUrl, setQuickUploadedUrl] = useState('');
-  const [quickUploadError, setQuickUploadError] = useState<string | null>(null);
-  const [quickCopied, setQuickCopied] = useState(false);
 
   const apiFetch = useCallback(
     async (url: string, init: RequestInit = {}) => {
@@ -745,24 +740,16 @@ export function DashboardView({ locale }: DashboardViewProps) {
     }
   };
 
-  const handleCopyUrlValue = async (urlToCopy: string, target: 'form' | 'quick') => {
+  const handleCopyUrlValue = async (urlToCopy: string) => {
     const clean = urlToCopy.trim();
     if (!clean) return;
     const ok = await copyTextToClipboard(clean);
     if (!ok) return;
-    if (target === 'form') {
-      setCopiedImageUrl(true);
-      window.setTimeout(() => setCopiedImageUrl(false), 1800);
-    } else {
-      setQuickCopied(true);
-      window.setTimeout(() => setQuickCopied(false), 1800);
-    }
+    setCopiedImageUrl(true);
+    window.setTimeout(() => setCopiedImageUrl(false), 1800);
   };
 
-  const handleImageFileUpload = async (
-    e: ChangeEvent<HTMLInputElement>,
-    target: 'form' | 'quick'
-  ) => {
+  const handleImageFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
@@ -770,37 +757,36 @@ export function DashboardView({ locale }: DashboardViewProps) {
     const allowedMimes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
     const hasImageExt = /\.(png|jpe?g|gif|webp)$/i.test(file.name);
     if ((file.type && !allowedMimes.has(file.type)) || (!file.type && !hasImageExt)) {
-      const msg = isFr
-        ? 'Format non supporté. Utilisez une image PNG, JPG, GIF ou WEBP.'
-        : 'Unsupported format. Use a PNG, JPG, GIF, or WEBP image.';
-      if (target === 'form') setUploadStatusMsg({ kind: 'err', text: msg });
-      else setQuickUploadError(msg);
+      setUploadStatusMsg({
+        kind: 'err',
+        text: isFr
+          ? 'Format non supporté. Utilisez une image PNG, JPG, GIF ou WEBP.'
+          : 'Unsupported format. Use a PNG, JPG, GIF, or WEBP image.',
+      });
       return;
     }
 
     if (file.size > 8 * 1024 * 1024) {
-      const msg = isFr ? 'Image trop volumineuse (max 8 Mo).' : 'Image too large (max 8 MB).';
-      if (target === 'form') setUploadStatusMsg({ kind: 'err', text: msg });
-      else setQuickUploadError(msg);
+      setUploadStatusMsg({
+        kind: 'err',
+        text: isFr ? 'Image trop volumineuse (max 8 Mo).' : 'Image too large (max 8 MB).',
+      });
       return;
     }
 
     if (uploadProvider === 'discord' && !detail) {
-      const msg = isFr
-        ? 'Sélectionnez un serveur configuré pour envoyer sur Discord.'
-        : 'Select a configured server to upload to Discord.';
-      if (target === 'form') setUploadStatusMsg({ kind: 'err', text: msg });
-      else setQuickUploadError(msg);
+      setUploadStatusMsg({
+        kind: 'err',
+        text: isFr
+          ? 'Sélectionnez un serveur configuré pour envoyer sur Discord.'
+          : 'Select a configured server to upload to Discord.',
+      });
       return;
     }
 
     setImageUploading(true);
-    if (target === 'form') {
-      setUploadStatusMsg(null);
-      setFormError(null);
-    } else {
-      setQuickUploadError(null);
-    }
+    setUploadStatusMsg(null);
+    setFormError(null);
 
     try {
       const params = new URLSearchParams({ provider: uploadProvider });
@@ -829,46 +815,40 @@ export function DashboardView({ locale }: DashboardViewProps) {
       };
 
       if (!res.ok || !data.url) {
-        const errMsg =
-          data.error ||
-          (isFr ? "Échec de l'envoi de l'image." : 'Image upload failed.');
-        if (target === 'form') setUploadStatusMsg({ kind: 'err', text: errMsg });
-        else setQuickUploadError(errMsg);
+        setUploadStatusMsg({
+          kind: 'err',
+          text:
+            data.error ||
+            (isFr ? "Échec de l'envoi de l'image." : 'Image upload failed.'),
+        });
         return;
       }
 
       const copied = await copyTextToClipboard(data.url);
       const hostLabel = data.hostName || (uploadProvider === 'discord' ? 'Discord' : 'Web');
 
-      if (target === 'form') {
-        setDraftValue(data.url);
-        setCopiedImageUrl(copied);
-        if (copied) {
-          window.setTimeout(() => setCopiedImageUrl(false), 2500);
-        }
-        setUploadStatusMsg({
-          kind: 'ok',
-          text: copied
-            ? isFr
-              ? `Image hébergée (${hostLabel}) — lien inséré et copié !`
-              : `Image hosted (${hostLabel}) — link inserted & copied!`
-            : isFr
-              ? `Image hébergée (${hostLabel}) — lien prêt ci-dessus.`
-              : `Image hosted (${hostLabel}) — link ready above.`,
-        });
-      } else {
-        setQuickUploadedUrl(data.url);
-        setQuickCopied(copied);
-        if (copied) {
-          window.setTimeout(() => setQuickCopied(false), 2500);
-        }
+      setDraftValue(data.url);
+      setCopiedImageUrl(copied);
+      if (copied) {
+        window.setTimeout(() => setCopiedImageUrl(false), 2500);
       }
+      setUploadStatusMsg({
+        kind: 'ok',
+        text: copied
+          ? isFr
+            ? `Image hébergée (${hostLabel}) — lien inséré et copié !`
+            : `Image hosted (${hostLabel}) — link inserted & copied!`
+          : isFr
+            ? `Image hébergée (${hostLabel}) — lien inséré ci-dessus.`
+            : `Image hosted (${hostLabel}) — link inserted above.`,
+      });
     } catch {
-      const errMsg = isFr
-        ? "Erreur réseau lors de l'envoi de l'image."
-        : 'Network error while uploading image.';
-      if (target === 'form') setUploadStatusMsg({ kind: 'err', text: errMsg });
-      else setQuickUploadError(errMsg);
+      setUploadStatusMsg({
+        kind: 'err',
+        text: isFr
+          ? "Erreur réseau lors de l'envoi de l'image."
+          : 'Network error while uploading image.',
+      });
     } finally {
       setImageUploading(false);
     }
@@ -1602,144 +1582,16 @@ export function DashboardView({ locale }: DashboardViewProps) {
                   ({detail.events.length})
                 </span>
               </h3>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuickUploaderOpen((prev) => !prev);
-                    setQuickUploadError(null);
-                  }}
-                  disabled={actionBusy}
-                  className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg border text-xs sm:text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-                    quickUploaderOpen
-                      ? 'bg-[#313338] border-[#a3ab72]/60 text-[#F2F3F5]'
-                      : 'bg-[#1e1f22] hover:bg-[#313338] border-white/15 text-[#F2F3F5]'
-                  }`}
-                >
-                  <Upload className="w-4 h-4 text-[#a3ab72]" aria-hidden="true" />
-                  <span>{isFr ? 'Héberger une image' : 'Upload image'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openCreateForm()}
-                  disabled={actionBusy}
-                  className="w-full sm:w-auto sm:min-w-[180px] inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-xs sm:text-sm font-bold text-[#F2F3F5] transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  <Plus className="w-4 h-4" aria-hidden="true" />
-                  <span>{isFr ? 'Créer un événement' : 'Create event'}</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => openCreateForm()}
+                disabled={actionBusy}
+                className="w-full sm:w-auto sm:min-w-[180px] inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-xs sm:text-sm font-bold text-[#F2F3F5] transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                <span>{isFr ? 'Créer un événement' : 'Create event'}</span>
+              </button>
             </div>
-
-            {quickUploaderOpen && (
-              <div className="rounded-lg bg-[#1e1f22] border border-[#8c935d]/40 p-4 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-bold text-[#F2F3F5]">
-                      {isFr
-                        ? "Téléverser une image et copier son lien direct"
-                        : 'Upload an image and copy its direct URL'}
-                    </p>
-                    <p className="text-xs text-[#b9bbbe] mt-0.5">
-                      {isFr
-                        ? 'PNG, JPG, GIF ou WEBP (max 8 Mo). Utilisable partout comme un lien classique.'
-                        : 'PNG, JPG, GIF, or WEBP (max 8 MB). Use the link anywhere like a standard URL.'}
-                    </p>
-                  </div>
-
-                  <div className="inline-flex items-center gap-1 p-1 rounded-lg bg-[#2b2d31] border border-white/10 self-start sm:self-auto">
-                    <button
-                      type="button"
-                      onClick={() => setUploadProvider('thirdparty')}
-                      className={`h-8 px-3 rounded-md text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-                        uploadProvider === 'thirdparty'
-                          ? 'bg-[#8c935d] text-[#F2F3F5]'
-                          : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-                      }`}
-                    >
-                      {isFr ? 'Site tiers gratuit' : 'Free image host'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setUploadProvider('discord')}
-                      className={`h-8 px-3 rounded-md text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-                        uploadProvider === 'discord'
-                          ? 'bg-[#8c935d] text-[#F2F3F5]'
-                          : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
-                      }`}
-                    >
-                      Discord (#log-logoto)
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-                  <input
-                    ref={quickUploadInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/gif,image/webp"
-                    onChange={(ev) => void handleImageFileUpload(ev, 'quick')}
-                    className="hidden"
-                  />
-                  <button
-                    type="button"
-                    disabled={imageUploading}
-                    onClick={() => quickUploadInputRef.current?.click()}
-                    className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-xs font-bold text-[#F2F3F5] cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
-                  >
-                    <Upload className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>
-                      {imageUploading
-                        ? isFr
-                          ? 'Envoi en cours…'
-                          : 'Uploading…'
-                        : isFr
-                          ? 'Choisir une image'
-                          : 'Choose image'}
-                    </span>
-                  </button>
-
-                  {quickUploadedUrl && (
-                    <div className="flex-1 min-w-0 flex items-center gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={quickUploadedUrl}
-                        aria-label={isFr ? 'Lien généré' : 'Generated URL'}
-                        className="flex-1 min-w-0 h-10 px-3 rounded-lg bg-[#2b2d31] border border-white/10 text-xs font-mono text-[#a3ab72]"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void handleCopyUrlValue(quickUploadedUrl, 'quick')}
-                        className="inline-flex items-center justify-center gap-1.5 h-10 px-3 rounded-lg bg-[#2b2d31] hover:bg-[#313338] border border-white/15 text-xs font-semibold text-[#F2F3F5] cursor-pointer shrink-0 whitespace-nowrap"
-                      >
-                        {quickCopied ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-[#43b581]" />
-                            <span>{isFr ? 'Copié' : 'Copied'}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5" />
-                            <span>{isFr ? 'Copier' : 'Copy'}</span>
-                          </>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openCreateForm(quickUploadedUrl)}
-                        className="inline-flex items-center justify-center gap-1.5 h-10 px-3 rounded-lg bg-[#2b2d31] hover:bg-[#8c935d] border border-white/15 text-xs font-semibold text-[#F2F3F5] cursor-pointer shrink-0 whitespace-nowrap"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>{isFr ? 'Créer événement' : 'Use in event'}</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {quickUploadError && <p className="text-xs text-[#f04747]">{quickUploadError}</p>}
-              </div>
-            )}
 
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-3 border-t border-white/[0.08]">
               <div className="relative flex-1 md:max-w-sm">
@@ -1921,7 +1773,7 @@ export function DashboardView({ locale }: DashboardViewProps) {
                     {draftType !== 'n' && draftValue.trim() && (
                       <button
                         type="button"
-                        onClick={() => void handleCopyUrlValue(draftValue, 'form')}
+                        onClick={() => void handleCopyUrlValue(draftValue)}
                         aria-label={isFr ? "Copier le lien de l'image" : 'Copy image link'}
                         className="inline-flex items-center justify-center gap-1.5 h-11 px-3.5 rounded-lg bg-[#1e1f22] hover:bg-[#313338] border border-white/15 text-xs font-semibold text-[#F2F3F5] cursor-pointer shrink-0 whitespace-nowrap"
                       >
@@ -1981,7 +1833,7 @@ export function DashboardView({ locale }: DashboardViewProps) {
                         ref={imageUploadInputRef}
                         type="file"
                         accept="image/png,image/jpeg,image/gif,image/webp"
-                        onChange={(ev) => void handleImageFileUpload(ev, 'form')}
+                        onChange={(ev) => void handleImageFileUpload(ev)}
                         className="hidden"
                       />
                       <button

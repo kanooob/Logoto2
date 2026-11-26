@@ -662,7 +662,30 @@ export function registerDashboardRoutes(
       }
     }
 
-    // Catbox.moe (free, permanent, no API key required)
+    // sxcu.net (free, permanent, no API key required)
+    try {
+      const sxcuForm = new FormData();
+      sxcuForm.append('file', new Blob([new Uint8Array(buf)], { type: mime }), filename);
+      sxcuForm.append('noembed', '1');
+
+      const sxcuResp = await fetch('https://sxcu.net/api/files/create', {
+        method: 'POST',
+        headers: { 'User-Agent': 'LogotoBot/2.0' },
+        body: sxcuForm,
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (sxcuResp.ok) {
+        const sxcuJson = (await sxcuResp.json()) as { url?: string };
+        const url = typeof sxcuJson.url === 'string' ? sxcuJson.url.trim() : '';
+        if (isSafeImageUrl(url)) {
+          return { url, hostName: 'sxcu.net' };
+        }
+      }
+    } catch {
+      // Fallback to Catbox / Freeimage.host
+    }
+
+    // Catbox.moe fallback (free, permanent, no API key required)
     try {
       const form = new FormData();
       form.append('reqtype', 'fileupload');
@@ -801,9 +824,13 @@ export function registerDashboardRoutes(
 
         try {
           const attachment = new AttachmentBuilder(buf, { name: safeFilename });
+          const uploaderLabel = session.user.globalName
+            ? `${session.user.globalName} (@${session.user.username})`
+            : `@${session.user.username}`;
           const sent = await cfg.logChannel.send({
-            content: '🖼️ Image hébergée depuis le Dashboard Logoto',
+            content: `Image upload par ${uploaderLabel} depuis le dashboard`,
             files: [attachment],
+            allowedMentions: { parse: [] },
           });
           const uploadedUrl = sent.attachments.first()?.url ?? '';
           if (!isSafeImageUrl(uploadedUrl)) {
