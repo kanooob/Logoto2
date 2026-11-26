@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto';
 import { AttachmentBuilder, EmbedBuilder, PermissionsBitField, type Client, type Guild } from 'discord.js';
-import express, { type Express, type Response } from 'express';
+import express, { type Express, type NextFunction, type Response } from 'express';
 import { followAnnouncementsInLogChannel } from '../bot/commands/setupCommand.js';
 import { t } from '../bot/i18n/index.js';
 import {
@@ -600,6 +601,188 @@ export function registerDashboardRoutes(
     limit: MAX_UPLOAD_BYTES,
   });
 
+  // Anti-spam protection for third-party hosts (ImgBB / sxcu.net) and Discord uploads
+  type UploadProvider = 'thirdparty' | 'discord';
+  const UPLOAD_LIMITS: Record<
+    UploadProvider,
+    { cooldownMs: number; burstWindowMs: number; burstMax: number; dailyWindowMs: number; dailyMax: number }
+  > = {
+    thirdparty: {
+      cooldownMs: 12_000,
+      burstWindowMs: 10 * 60_000,
+      burstMax: 5,
+      dailyWindowMs: 24 * 60 * 60_000,
+      dailyMax: 25,
+    },
+    discord: {
+      cooldownMs: 5_000,
+      burstWindowMs: 10 * 60_000,
+      burstMax: 12,
+      dailyWindowMs: 24 * 60 * 60_000,
+      dailyMax: 60,
+    },
+  };
+  const GLOBAL_THIRDPARTY_HOURLY_MAX = 60;
+  const GLOBAL_THIRDPARTY_DAILY_MAX = 250;
+  const DEDUPE_TTL_MS = 24 * 60 * 60_000;
+  const DEDUPE_MAX_ENTRIES = 300;
+  const IMGBB_BACKOFF_MS = 10 * 60_000;
+
+  const activeUploadsByUser = new Set<string>();
+  const userUploadTimestamps = new Map<string, number[]>();
+  let globalThirdPartyTimestamps: number[] = [];
+  let imgbbBackoffUntil = 0;
+  const thirdPartyDedupeCache = new Map<
+    string,
+    { url: string; hostName: string; expiresAt: number }
+  >();
+
+  function pruneOldTimestamps(list: number[], maxAgeMs: number, now: number): number[] {
+    const cutoff = now - maxAgeMs;
+    return list.filter((ts) => ts > cutoff);
+  }
+
+  function checkUploadRateLimit(
+    userId: string,
+    provider: UploadProvider
+  ): { allowed: true } | { allowed: false; retryAfterSeconds: number; reason: 'inflight' | 'cooldown' | 'burst' | 'daily' | 'global' } {
+    const now = Date.now();
+    const userKey = `${userId}:${provider}`;
+
+    if (activeUploadsByUser.has(userKey)) {
+      return { allowed: false, retryAfterSeconds: 3, reason: 'inflight' };
+    }
+
+    const limits = UPLOAD_LIMITS[provider];
+    const recent = pruneOldTimestamps(
+      userUploadTimestamps.get(userKey) ?? [],
+      limits.dailyWindowMs,
+      now
+    );
+    if (recent.length > 0) {
+      userUploadTimestamps.set(userKey, recent);
+    } else {
+      userUploadTimestamps.delete(userKey);
+    }
+
+    const lastUploadAt = recent[recent.length - 1];
+    if (lastUploadAt && now - lastUploadAt < limits.cooldownMs) {
+      const waitMs = limits.cooldownMs - (now - lastUploadAt);
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(1, Math.ceil(waitMs / 1000)),
+        reason: 'cooldown',
+      };
+    }
+
+    const inBurstWindow = recent.filter((ts) => ts > now - limits.burstWindowMs);
+    if (inBurstWindow.length >= limits.burstMax) {
+      const waitMs = limits.burstWindowMs - (now - inBurstWindow[0]);
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(1, Math.ceil(waitMs / 1000)),
+        reason: 'burst',
+      };
+    }
+
+    if (recent.length >= limits.dailyMax) {
+      const waitMs = limits.dailyWindowMs - (now - recent[0]);
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(1, Math.ceil(waitMs / 1000)),
+        reason: 'daily',
+      };
+    }
+
+    if (provider === 'thirdparty') {
+      globalThirdPartyTimestamps = pruneOldTimestamps(
+        globalThirdPartyTimestamps,
+        24 * 60 * 60_000,
+        now
+      );
+      const inHour = globalThirdPartyTimestamps.filter((ts) => ts > now - 60 * 60_000);
+      if (inHour.length >= GLOBAL_THIRDPARTY_HOURLY_MAX) {
+        const waitMs = 60 * 60_000 - (now - inHour[0]);
+        return {
+          allowed: false,
+          retryAfterSeconds: Math.max(1, Math.ceil(waitMs / 1000)),
+          reason: 'global',
+        };
+      }
+      if (globalThirdPartyTimestamps.length >= GLOBAL_THIRDPARTY_DAILY_MAX) {
+        const waitMs = 24 * 60 * 60_000 - (now - globalThirdPartyTimestamps[0]);
+        return {
+          allowed: false,
+          retryAfterSeconds: Math.max(1, Math.ceil(waitMs / 1000)),
+          reason: 'global',
+        };
+      }
+    }
+
+    return { allowed: true };
+  }
+
+  function recordUploadAttempt(userId: string, provider: UploadProvider): void {
+    const now = Date.now();
+    const userKey = `${userId}:${provider}`;
+    const limits = UPLOAD_LIMITS[provider];
+    const recent = pruneOldTimestamps(
+      userUploadTimestamps.get(userKey) ?? [],
+      limits.dailyWindowMs,
+      now
+    );
+    recent.push(now);
+    userUploadTimestamps.set(userKey, recent);
+
+    if (provider === 'thirdparty') {
+      globalThirdPartyTimestamps = pruneOldTimestamps(
+        globalThirdPartyTimestamps,
+        24 * 60 * 60_000,
+        now
+      );
+      globalThirdPartyTimestamps.push(now);
+    }
+  }
+
+  function cleanupUploadCaches(): void {
+    const now = Date.now();
+    for (const [k, expiresEntry] of thirdPartyDedupeCache.entries()) {
+      if (expiresEntry.expiresAt <= now) {
+        thirdPartyDedupeCache.delete(k);
+      }
+    }
+    const maxWindow = 24 * 60 * 60_000;
+    for (const [k, list] of userUploadTimestamps.entries()) {
+      const kept = pruneOldTimestamps(list, maxWindow, now);
+      if (kept.length === 0) {
+        userUploadTimestamps.delete(k);
+      } else {
+        userUploadTimestamps.set(k, kept);
+      }
+    }
+    globalThirdPartyTimestamps = pruneOldTimestamps(globalThirdPartyTimestamps, maxWindow, now);
+  }
+  setInterval(cleanupUploadCaches, 5 * 60_000).unref();
+
+  function formatRateLimitMessage(
+    locale: 'fr' | 'en',
+    reason: 'inflight' | 'cooldown' | 'burst' | 'daily' | 'global',
+    retryAfterSeconds: number
+  ): string {
+    if (locale === 'en') {
+      if (reason === 'inflight') return 'Another upload is already in progress.';
+      if (reason === 'global') {
+        return `Free host upload quota temporarily reached. Please wait ${retryAfterSeconds}s or upload to Discord.`;
+      }
+      return `Upload limit reached to prevent spam. Please wait ${retryAfterSeconds}s before trying again.`;
+    }
+    if (reason === 'inflight') return 'Un envoi est déjà en cours. Patientez un instant.';
+    if (reason === 'global') {
+      return `Quota temporaire de l'hébergeur externe atteint. Patientez ${retryAfterSeconds} s ou utilisez Discord (#log-logoto).`;
+    }
+    return `Limite anti-spam atteinte. Veuillez patienter ${retryAfterSeconds} s avant d'envoyer une autre image.`;
+  }
+
   function detectImageMagic(buf: Buffer): { ext: string; mime: string } | null {
     if (buf.length < 12) return null;
     // PNG: 89 50 4E 47 0D 0A 1A 0A
@@ -639,26 +822,42 @@ export function registerDashboardRoutes(
     mime: string
   ): Promise<{ url: string; hostName: string }> {
     const imgbbKey = process.env.IMGBB_API_KEY?.trim();
-    if (imgbbKey) {
-      const form = new FormData();
-      form.append('key', imgbbKey);
-      form.append('image', buf.toString('base64'));
-      form.append('name', filename.replace(/\.[^.]+$/, ''));
+    if (imgbbKey && Date.now() >= imgbbBackoffUntil) {
+      try {
+        const form = new FormData();
+        form.append('key', imgbbKey);
+        form.append('image', buf.toString('base64'));
+        form.append('name', filename.replace(/\.[^.]+$/, ''));
 
-      const resp = await fetch('https://api.imgbb.com/1/upload', {
-        method: 'POST',
-        body: form,
-        signal: AbortSignal.timeout(20_000),
-      });
-      if (resp.ok) {
-        const json = (await resp.json()) as {
-          success?: boolean;
-          data?: { image?: { url?: string }; url?: string };
-        };
-        const url = json.data?.image?.url || json.data?.url || '';
-        if (json.success && isSafeImageUrl(url)) {
-          return { url, hostName: 'ImgBB' };
+        const resp = await fetch('https://api.imgbb.com/1/upload', {
+          method: 'POST',
+          body: form,
+          signal: AbortSignal.timeout(20_000),
+        });
+        if (resp.status === 429) {
+          imgbbBackoffUntil = Date.now() + IMGBB_BACKOFF_MS;
+        } else if (resp.ok) {
+          const json = (await resp.json()) as {
+            success?: boolean;
+            data?: { image?: { url?: string }; url?: string };
+          };
+          const url = json.data?.image?.url || json.data?.url || '';
+          if (json.success && isSafeImageUrl(url)) {
+            return { url, hostName: 'ImgBB' };
+          }
+        } else if (resp.status === 400 || resp.status === 403) {
+          const errText = (await resp.text().catch(() => '')).toLowerCase();
+          if (
+            errText.includes('rate') ||
+            errText.includes('limit') ||
+            errText.includes('flood') ||
+            errText.includes('spam')
+          ) {
+            imgbbBackoffUntil = Date.now() + IMGBB_BACKOFF_MS;
+          }
         }
+      } catch {
+        // Fall through to sxcu.net fallback
       }
     }
 
@@ -735,14 +934,39 @@ export function registerDashboardRoutes(
     throw new Error('Third-party image hosts are temporarily unavailable.');
   }
 
+  function uploadRateLimitMiddleware(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction
+  ): void {
+    const userId = req.discordSession?.user.id;
+    if (!userId) {
+      res.status(401).json({ error: 'Authentification requise.' });
+      return;
+    }
+    const provider: UploadProvider = req.query.provider === 'discord' ? 'discord' : 'thirdparty';
+    const reqLocale = req.query.locale === 'en' ? 'en' : 'fr';
+    const check = checkUploadRateLimit(userId, provider);
+    if (!check.allowed) {
+      res.setHeader('Retry-After', String(check.retryAfterSeconds));
+      res.status(429).json({
+        error: formatRateLimitMessage(reqLocale, check.reason, check.retryAfterSeconds),
+        retryAfterSeconds: check.retryAfterSeconds,
+      });
+      return;
+    }
+    next();
+  }
+
   app.post(
     '/api/dashboard/upload-image',
     requireDiscordAuth,
+    uploadRateLimitMiddleware,
     (req, res, next) => {
       rawImageParser(req, res, (err) => {
         if (err) {
           res.status(400).json({
-            error: "Fichier invalide ou trop volumineux (max 8 Mo, PNG/JPG/GIF/WEBP).",
+            error: 'Fichier invalide ou trop volumineux (max 8 Mo, PNG/JPG/GIF/WEBP).',
           });
           return;
         }
@@ -750,122 +974,166 @@ export function registerDashboardRoutes(
       });
     },
     async (req: AuthenticatedRequest, res) => {
-      const buf = Buffer.isBuffer(req.body) ? req.body : null;
-      if (!buf || buf.length === 0) {
-        res.status(400).json({ error: 'Aucune donnée image reçue.' });
-        return;
-      }
-      if (buf.length > MAX_UPLOAD_BYTES) {
-        res.status(400).json({ error: 'Image trop volumineuse (max 8 Mo).' });
-        return;
-      }
+      const session = req.discordSession!;
+      const provider: UploadProvider = req.query.provider === 'discord' ? 'discord' : 'thirdparty';
+      const reqLocale = req.query.locale === 'en' ? 'en' : 'fr';
+      const userKey = `${session.user.id}:${provider}`;
 
-      const detected = detectImageMagic(buf);
-      if (!detected) {
-        res.status(400).json({
-          error: 'Format non supporté. Utilisez un fichier PNG, JPG, GIF ou WEBP.',
+      // Re-check just before acquiring in-flight lock to block parallel race requests
+      const recheck = checkUploadRateLimit(session.user.id, provider);
+      if (!recheck.allowed) {
+        res.setHeader('Retry-After', String(recheck.retryAfterSeconds));
+        res.status(429).json({
+          error: formatRateLimitMessage(reqLocale, recheck.reason, recheck.retryAfterSeconds),
+          retryAfterSeconds: recheck.retryAfterSeconds,
         });
         return;
       }
 
-      const provider = req.query.provider === 'discord' ? 'discord' : 'thirdparty';
-      const safeFilename = `logoto-${Date.now()}.${detected.ext}`;
-
-      if (provider === 'discord') {
-        const guildId = typeof req.query.guildId === 'string' ? req.query.guildId.trim() : '';
-        if (!/^\d{15,22}$/.test(guildId)) {
-          res.status(400).json({ error: 'Identifiant de serveur Discord manquant ou invalide.' });
+      activeUploadsByUser.add(userKey);
+      try {
+        const buf = Buffer.isBuffer(req.body) ? req.body : null;
+        if (!buf || buf.length === 0) {
+          res.status(400).json({ error: 'Aucune donnée image reçue.' });
+          return;
+        }
+        if (buf.length > MAX_UPLOAD_BYTES) {
+          res.status(400).json({ error: 'Image trop volumineuse (max 8 Mo).' });
           return;
         }
 
-        const session = req.discordSession!;
-        await refreshSessionGuildsIfNeeded(session);
-        if (!session.guilds.some((g) => g.id === guildId)) {
-          res.status(403).json({
-            error: 'Permissions insuffisantes sur ce serveur Discord.',
-          });
-          return;
-        }
-
-        const client = getDiscordClient();
-        if (!client || !client.isReady()) {
-          res.status(503).json({ error: 'Le bot Discord est actuellement hors ligne.' });
-          return;
-        }
-
-        const guild =
-          client.guilds.cache.get(guildId) ?? (await client.guilds.fetch(guildId).catch(() => null));
-        if (!guild) {
-          res.status(404).json({ error: "Logoto n'est pas présent sur ce serveur." });
-          return;
-        }
-
-        await guild.channels.fetch().catch(() => null);
-        const cfg = await getGuildConfig(guild);
-        if (!cfg.logChannel) {
+        const detected = detectImageMagic(buf);
+        if (!detected) {
           res.status(400).json({
-            error: "Initialisez d'abord Logoto sur ce serveur (/setup) pour disposer du salon #log-logoto.",
+            error: 'Format non supporté. Utilisez un fichier PNG, JPG, GIF ou WEBP.',
           });
           return;
         }
 
-        const me = guild.members.me ?? (await guild.members.fetchMe().catch(() => null));
-        const perms = me ? cfg.logChannel.permissionsFor(me) : null;
-        if (
-          !perms?.has(PermissionsBitField.Flags.ViewChannel) ||
-          !perms?.has(PermissionsBitField.Flags.SendMessages) ||
-          !perms?.has(PermissionsBitField.Flags.AttachFiles)
-        ) {
-          res.status(403).json({
-            error: 'Le bot n’a pas la permission Joindre des fichiers dans #log-logoto.',
-          });
-          return;
-        }
+        const safeFilename = `logoto-${Date.now()}.${detected.ext}`;
 
-        try {
-          const attachment = new AttachmentBuilder(buf, { name: safeFilename });
-          const uploaderLabel = session.user.globalName
-            ? `${session.user.globalName} (@${session.user.username})`
-            : `@${session.user.username}`;
-          const sent = await cfg.logChannel.send({
-            content: `Image upload par ${uploaderLabel} depuis le dashboard`,
-            files: [attachment],
-            allowedMentions: { parse: [] },
-          });
-          const uploadedUrl = sent.attachments.first()?.url ?? '';
-          if (!isSafeImageUrl(uploadedUrl)) {
-            res.status(502).json({ error: 'Discord n’a pas renvoyé de lien valide.' });
+        if (provider === 'discord') {
+          const guildId = typeof req.query.guildId === 'string' ? req.query.guildId.trim() : '';
+          if (!/^\d{15,22}$/.test(guildId)) {
+            res.status(400).json({ error: 'Identifiant de serveur Discord manquant ou invalide.' });
             return;
           }
 
+          await refreshSessionGuildsIfNeeded(session);
+          if (!session.guilds.some((g) => g.id === guildId)) {
+            res.status(403).json({
+              error: 'Permissions insuffisantes sur ce serveur Discord.',
+            });
+            return;
+          }
+
+          const client = getDiscordClient();
+          if (!client || !client.isReady()) {
+            res.status(503).json({ error: 'Le bot Discord est actuellement hors ligne.' });
+            return;
+          }
+
+          const guild =
+            client.guilds.cache.get(guildId) ?? (await client.guilds.fetch(guildId).catch(() => null));
+          if (!guild) {
+            res.status(404).json({ error: "Logoto n'est pas présent sur ce serveur." });
+            return;
+          }
+
+          await guild.channels.fetch().catch(() => null);
+          const cfg = await getGuildConfig(guild);
+          if (!cfg.logChannel) {
+            res.status(400).json({
+              error:
+                "Initialisez d'abord Logoto sur ce serveur (/setup) pour disposer du salon #log-logoto.",
+            });
+            return;
+          }
+
+          const me = guild.members.me ?? (await guild.members.fetchMe().catch(() => null));
+          const perms = me ? cfg.logChannel.permissionsFor(me) : null;
+          if (
+            !perms?.has(PermissionsBitField.Flags.ViewChannel) ||
+            !perms?.has(PermissionsBitField.Flags.SendMessages) ||
+            !perms?.has(PermissionsBitField.Flags.AttachFiles)
+          ) {
+            res.status(403).json({
+              error: 'Le bot n’a pas la permission Joindre des fichiers dans #log-logoto.',
+            });
+            return;
+          }
+
+          recordUploadAttempt(session.user.id, 'discord');
+          try {
+            const attachment = new AttachmentBuilder(buf, { name: safeFilename });
+            const uploaderLabel = session.user.globalName
+              ? `${session.user.globalName} (@${session.user.username})`
+              : `@${session.user.username}`;
+            const sent = await cfg.logChannel.send({
+              content: `Image upload par ${uploaderLabel} depuis le dashboard`,
+              files: [attachment],
+              allowedMentions: { parse: [] },
+            });
+            const uploadedUrl = sent.attachments.first()?.url ?? '';
+            if (!isSafeImageUrl(uploadedUrl)) {
+              res.status(502).json({ error: 'Discord n’a pas renvoyé de lien valide.' });
+              return;
+            }
+
+            res.json({
+              url: uploadedUrl,
+              provider: 'discord',
+              hostName: `#${cfg.logChannel.name}`,
+            });
+            return;
+          } catch (err) {
+            console.error('[Logoto] Discord image upload error:', err);
+            res.status(502).json({
+              error: "Impossible d'envoyer l'image sur Discord.",
+            });
+            return;
+          }
+        }
+
+        // SHA-256 deduplication avoids re-uploading identical files to ImgBB/sxcu.net
+        const imageHash = createHash('sha256').update(buf).digest('hex');
+        const cached = thirdPartyDedupeCache.get(imageHash);
+        if (cached && cached.expiresAt > Date.now()) {
           res.json({
-            url: uploadedUrl,
-            provider: 'discord',
-            hostName: `#${cfg.logChannel.name}`,
-          });
-          return;
-        } catch (err) {
-          console.error('[Logoto] Discord image upload error:', err);
-          res.status(502).json({
-            error: "Impossible d'envoyer l'image sur Discord.",
+            url: cached.url,
+            provider: 'thirdparty',
+            hostName: cached.hostName,
+            deduplicated: true,
           });
           return;
         }
-      }
 
-      try {
-        const result = await uploadToThirdPartyHost(buf, safeFilename, detected.mime);
-        res.json({
-          url: result.url,
-          provider: 'thirdparty',
-          hostName: result.hostName,
-        });
-      } catch (err) {
-        console.warn('[Logoto] Third-party image upload error:', err);
-        res.status(502).json({
-          error:
-            "L'hébergeur tiers est momentanément indisponible. Vous pouvez utiliser l'envoi vers Discord.",
-        });
+        recordUploadAttempt(session.user.id, 'thirdparty');
+        try {
+          const result = await uploadToThirdPartyHost(buf, safeFilename, detected.mime);
+          if (thirdPartyDedupeCache.size >= DEDUPE_MAX_ENTRIES) {
+            const oldestKey = thirdPartyDedupeCache.keys().next().value;
+            if (oldestKey) thirdPartyDedupeCache.delete(oldestKey);
+          }
+          thirdPartyDedupeCache.set(imageHash, {
+            url: result.url,
+            hostName: result.hostName,
+            expiresAt: Date.now() + DEDUPE_TTL_MS,
+          });
+          res.json({
+            url: result.url,
+            provider: 'thirdparty',
+            hostName: result.hostName,
+          });
+        } catch (err) {
+          console.warn('[Logoto] Third-party image upload error:', err);
+          res.status(502).json({
+            error:
+              "L'hébergeur tiers est momentanément indisponible. Vous pouvez utiliser l'envoi vers Discord.",
+          });
+        }
+      } finally {
+        activeUploadsByUser.delete(userKey);
       }
     }
   );

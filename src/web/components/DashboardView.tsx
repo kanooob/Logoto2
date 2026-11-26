@@ -179,8 +179,17 @@ export function DashboardView({ locale }: DashboardViewProps) {
   // Direct image upload state inside Create/Edit Event form
   const [uploadProvider, setUploadProvider] = useState<'thirdparty' | 'discord'>('thirdparty');
   const [imageUploading, setImageUploading] = useState(false);
+  const [uploadCooldownSec, setUploadCooldownSec] = useState(0);
   const [uploadStatusMsg, setUploadStatusMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [copiedImageUrl, setCopiedImageUrl] = useState(false);
+
+  useEffect(() => {
+    if (uploadCooldownSec <= 0) return;
+    const timer = window.setInterval(() => {
+      setUploadCooldownSec((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [uploadCooldownSec]);
 
   const apiFetch = useCallback(
     async (url: string, init: RequestInit = {}) => {
@@ -752,7 +761,7 @@ export function DashboardView({ locale }: DashboardViewProps) {
   const handleImageFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (!file) return;
+    if (!file || imageUploading || uploadCooldownSec > 0) return;
 
     const allowedMimes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
     const hasImageExt = /\.(png|jpe?g|gif|webp)$/i.test(file.name);
@@ -789,7 +798,10 @@ export function DashboardView({ locale }: DashboardViewProps) {
     setFormError(null);
 
     try {
-      const params = new URLSearchParams({ provider: uploadProvider });
+      const params = new URLSearchParams({
+        provider: uploadProvider,
+        locale,
+      });
       if (uploadProvider === 'discord' && detail) {
         params.set('guildId', detail.guild.id);
       }
@@ -812,9 +824,14 @@ export function DashboardView({ locale }: DashboardViewProps) {
         url?: string;
         hostName?: string;
         error?: string;
+        retryAfterSeconds?: number;
+        deduplicated?: boolean;
       };
 
       if (!res.ok || !data.url) {
+        if (typeof data.retryAfterSeconds === 'number' && data.retryAfterSeconds > 0) {
+          setUploadCooldownSec(Math.ceil(data.retryAfterSeconds));
+        }
         setUploadStatusMsg({
           kind: 'err',
           text:
@@ -826,6 +843,10 @@ export function DashboardView({ locale }: DashboardViewProps) {
 
       const copied = await copyTextToClipboard(data.url);
       const hostLabel = data.hostName || (uploadProvider === 'discord' ? 'Discord' : 'Web');
+
+      if (!data.deduplicated) {
+        setUploadCooldownSec(uploadProvider === 'thirdparty' ? 12 : 5);
+      }
 
       setDraftValue(data.url);
       setCopiedImageUrl(copied);
@@ -1794,41 +1815,58 @@ export function DashboardView({ locale }: DashboardViewProps) {
                 </div>
 
                 {draftType !== 'n' && (
-                  <div className="rounded-lg bg-[#1e1f22] border border-white/[0.08] p-3.5 space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div className="rounded-lg bg-[#1e1f22] border border-white/[0.08] p-3.5 sm:p-4 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
                       <span className="text-xs font-semibold text-[#F2F3F5]">
                         {isFr
                           ? 'Ou téléverser directement une image :'
                           : 'Or upload an image directly:'}
                       </span>
 
-                      <div className="inline-flex items-center gap-1 p-1 rounded-lg bg-[#2b2d31] border border-white/10 self-start sm:self-auto">
+                      <div
+                        role="radiogroup"
+                        aria-label={isFr ? "Destination d'hébergement" : 'Upload destination'}
+                        className="grid grid-cols-2 sm:inline-flex items-center gap-1 p-1 rounded-lg bg-[#2b2d31] border border-white/10 w-full sm:w-auto"
+                      >
                         <button
                           type="button"
+                          role="radio"
+                          aria-checked={uploadProvider === 'thirdparty'}
+                          disabled={imageUploading}
                           onClick={() => setUploadProvider('thirdparty')}
-                          className={`h-8 px-3 rounded-md text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                          className={`min-w-0 h-9 sm:h-8 px-2.5 sm:px-3 inline-flex items-center justify-center rounded-md text-xs font-semibold transition-colors cursor-pointer text-center disabled:opacity-60 ${
                             uploadProvider === 'thirdparty'
                               ? 'bg-[#8c935d] text-[#F2F3F5]'
                               : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
                           }`}
                         >
-                          {isFr ? 'Site tiers gratuit' : 'Free image host'}
+                          <span className="truncate">
+                            {isFr ? 'Site tiers' : 'Free host'}
+                            <span className="hidden sm:inline">
+                              {isFr ? ' gratuit' : ''}
+                            </span>
+                          </span>
                         </button>
                         <button
                           type="button"
+                          role="radio"
+                          aria-checked={uploadProvider === 'discord'}
+                          disabled={imageUploading}
                           onClick={() => setUploadProvider('discord')}
-                          className={`h-8 px-3 rounded-md text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                          className={`min-w-0 h-9 sm:h-8 px-2.5 sm:px-3 inline-flex items-center justify-center rounded-md text-xs font-semibold transition-colors cursor-pointer text-center disabled:opacity-60 ${
                             uploadProvider === 'discord'
                               ? 'bg-[#8c935d] text-[#F2F3F5]'
                               : 'text-[#b9bbbe] hover:text-[#F2F3F5]'
                           }`}
                         >
-                          Discord (#log-logoto)
+                          <span className="truncate">
+                            Discord <span className="hidden sm:inline font-normal opacity-85">(#log-logoto)</span>
+                          </span>
                         </button>
                       </div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3">
                       <input
                         ref={imageUploadInputRef}
                         type="file"
@@ -1838,9 +1876,9 @@ export function DashboardView({ locale }: DashboardViewProps) {
                       />
                       <button
                         type="button"
-                        disabled={imageUploading || actionBusy}
+                        disabled={imageUploading || actionBusy || uploadCooldownSec > 0}
                         onClick={() => imageUploadInputRef.current?.click()}
-                        className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-[#2b2d31] hover:bg-[#313338] border border-white/15 text-xs font-bold text-[#F2F3F5] cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
+                        className="w-full sm:w-auto inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-[#2b2d31] hover:bg-[#313338] border border-white/15 text-xs font-bold text-[#F2F3F5] cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0"
                       >
                         <Upload className="w-3.5 h-3.5 text-[#a3ab72]" aria-hidden="true" />
                         <span>
@@ -1848,19 +1886,33 @@ export function DashboardView({ locale }: DashboardViewProps) {
                             ? isFr
                               ? 'Envoi en cours…'
                               : 'Uploading…'
-                            : isFr
-                              ? 'Importer une image (PNG/JPG/GIF/WEBP)'
-                              : 'Upload image (PNG/JPG/GIF/WEBP)'}
+                            : uploadCooldownSec > 0
+                              ? isFr
+                                ? `Patientez ${uploadCooldownSec} s…`
+                                : `Wait ${uploadCooldownSec}s…`
+                              : isFr
+                                ? 'Importer une image'
+                                : 'Upload image'}
                         </span>
                       </button>
 
-                      {uploadStatusMsg && (
+                      {uploadStatusMsg ? (
                         <p
-                          className={`text-xs ${
+                          className={`text-xs leading-relaxed ${
                             uploadStatusMsg.kind === 'ok' ? 'text-[#43b581]' : 'text-[#f04747]'
                           }`}
                         >
                           {uploadStatusMsg.text}
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-[#b9bbbe]">
+                          {uploadProvider === 'discord'
+                            ? isFr
+                              ? 'Envoi dans #log-logoto (PNG, JPG, GIF, WEBP — max 8 Mo)'
+                              : 'Uploads to #log-logoto (PNG, JPG, GIF, WEBP — max 8 MB)'
+                            : isFr
+                              ? 'Hébergeur gratuit externe (PNG, JPG, GIF, WEBP — max 8 Mo)'
+                              : 'External free host (PNG, JPG, GIF, WEBP — max 8 MB)'}
                         </p>
                       )}
                     </div>
