@@ -1,5 +1,5 @@
-import { EmbedBuilder, type Client, type Guild } from 'discord.js';
-import type { Express, Response } from 'express';
+import { AttachmentBuilder, EmbedBuilder, PermissionsBitField, type Client, type Guild } from 'discord.js';
+import express, { type Express, type Response } from 'express';
 import { followAnnouncementsInLogChannel } from '../bot/commands/setupCommand.js';
 import { t } from '../bot/i18n/index.js';
 import {
@@ -590,6 +590,256 @@ export function registerDashboardRoutes(
         ...detail,
         importSummary: { created, updated, configUpdated, skipped },
       });
+    }
+  );
+
+  // Direct image upload (to Discord #log-logoto or free third-party host)
+  const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+  const rawImageParser = express.raw({
+    type: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'application/octet-stream'],
+    limit: MAX_UPLOAD_BYTES,
+  });
+
+  function detectImageMagic(buf: Buffer): { ext: string; mime: string } | null {
+    if (buf.length < 12) return null;
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (
+      buf[0] === 0x89 &&
+      buf[1] === 0x50 &&
+      buf[2] === 0x4e &&
+      buf[3] === 0x47 &&
+      buf[4] === 0x0d &&
+      buf[5] === 0x0a &&
+      buf[6] === 0x1a &&
+      buf[7] === 0x0a
+    ) {
+      return { ext: 'png', mime: 'image/png' };
+    }
+    // JPEG: FF D8 FF
+    if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+      return { ext: 'jpg', mime: 'image/jpeg' };
+    }
+    // GIF: GIF87a / GIF89a
+    if (buf.subarray(0, 4).toString('ascii') === 'GIF8') {
+      return { ext: 'gif', mime: 'image/gif' };
+    }
+    // WEBP: RIFF....WEBP
+    if (
+      buf.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buf.subarray(8, 12).toString('ascii') === 'WEBP'
+    ) {
+      return { ext: 'webp', mime: 'image/webp' };
+    }
+    return null;
+  }
+
+  async function uploadToThirdPartyHost(
+    buf: Buffer,
+    filename: string,
+    mime: string
+  ): Promise<{ url: string; hostName: string }> {
+    const imgbbKey = process.env.IMGBB_API_KEY?.trim();
+    if (imgbbKey) {
+      const form = new FormData();
+      form.append('key', imgbbKey);
+      form.append('image', buf.toString('base64'));
+      form.append('name', filename.replace(/\.[^.]+$/, ''));
+
+      const resp = await fetch('https://api.imgbb.com/1/upload', {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (resp.ok) {
+        const json = (await resp.json()) as {
+          success?: boolean;
+          data?: { image?: { url?: string }; url?: string };
+        };
+        const url = json.data?.image?.url || json.data?.url || '';
+        if (json.success && isSafeImageUrl(url)) {
+          return { url, hostName: 'ImgBB' };
+        }
+      }
+    }
+
+    // Catbox.moe (free, permanent, no API key required)
+    try {
+      const form = new FormData();
+      form.append('reqtype', 'fileupload');
+      form.append('fileToUpload', new Blob([new Uint8Array(buf)], { type: mime }), filename);
+
+      const resp = await fetch('https://catbox.moe/user/api.php', {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (resp.ok) {
+        const text = (await resp.text()).trim();
+        if (isSafeImageUrl(text)) {
+          return { url: text, hostName: 'Catbox' };
+        }
+      }
+    } catch {
+      // Fallback to Freeimage.host
+    }
+
+    // Optional Freeimage.host fallback if FREEIMAGE_API_KEY is configured
+    const freeimageKey = process.env.FREEIMAGE_API_KEY?.trim();
+    if (freeimageKey) {
+      const freeForm = new FormData();
+      freeForm.append('key', freeimageKey);
+      freeForm.append('action', 'upload');
+      freeForm.append('source', buf.toString('base64'));
+      freeForm.append('format', 'json');
+
+      const freeResp = await fetch('https://freeimage.host/api/1/upload', {
+        method: 'POST',
+        body: freeForm,
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (freeResp.ok) {
+        const freeJson = (await freeResp.json()) as {
+          status_code?: number;
+          image?: { url?: string };
+        };
+        const url = freeJson.image?.url || '';
+        if (freeJson.status_code === 200 && isSafeImageUrl(url)) {
+          return { url, hostName: 'Freeimage.host' };
+        }
+      }
+    }
+
+    throw new Error('Third-party image hosts are temporarily unavailable.');
+  }
+
+  app.post(
+    '/api/dashboard/upload-image',
+    requireDiscordAuth,
+    (req, res, next) => {
+      rawImageParser(req, res, (err) => {
+        if (err) {
+          res.status(400).json({
+            error: "Fichier invalide ou trop volumineux (max 8 Mo, PNG/JPG/GIF/WEBP).",
+          });
+          return;
+        }
+        next();
+      });
+    },
+    async (req: AuthenticatedRequest, res) => {
+      const buf = Buffer.isBuffer(req.body) ? req.body : null;
+      if (!buf || buf.length === 0) {
+        res.status(400).json({ error: 'Aucune donnée image reçue.' });
+        return;
+      }
+      if (buf.length > MAX_UPLOAD_BYTES) {
+        res.status(400).json({ error: 'Image trop volumineuse (max 8 Mo).' });
+        return;
+      }
+
+      const detected = detectImageMagic(buf);
+      if (!detected) {
+        res.status(400).json({
+          error: 'Format non supporté. Utilisez un fichier PNG, JPG, GIF ou WEBP.',
+        });
+        return;
+      }
+
+      const provider = req.query.provider === 'discord' ? 'discord' : 'thirdparty';
+      const safeFilename = `logoto-${Date.now()}.${detected.ext}`;
+
+      if (provider === 'discord') {
+        const guildId = typeof req.query.guildId === 'string' ? req.query.guildId.trim() : '';
+        if (!/^\d{15,22}$/.test(guildId)) {
+          res.status(400).json({ error: 'Identifiant de serveur Discord manquant ou invalide.' });
+          return;
+        }
+
+        const session = req.discordSession!;
+        await refreshSessionGuildsIfNeeded(session);
+        if (!session.guilds.some((g) => g.id === guildId)) {
+          res.status(403).json({
+            error: 'Permissions insuffisantes sur ce serveur Discord.',
+          });
+          return;
+        }
+
+        const client = getDiscordClient();
+        if (!client || !client.isReady()) {
+          res.status(503).json({ error: 'Le bot Discord est actuellement hors ligne.' });
+          return;
+        }
+
+        const guild =
+          client.guilds.cache.get(guildId) ?? (await client.guilds.fetch(guildId).catch(() => null));
+        if (!guild) {
+          res.status(404).json({ error: "Logoto n'est pas présent sur ce serveur." });
+          return;
+        }
+
+        await guild.channels.fetch().catch(() => null);
+        const cfg = await getGuildConfig(guild);
+        if (!cfg.logChannel) {
+          res.status(400).json({
+            error: "Initialisez d'abord Logoto sur ce serveur (/setup) pour disposer du salon #log-logoto.",
+          });
+          return;
+        }
+
+        const me = guild.members.me ?? (await guild.members.fetchMe().catch(() => null));
+        const perms = me ? cfg.logChannel.permissionsFor(me) : null;
+        if (
+          !perms?.has(PermissionsBitField.Flags.ViewChannel) ||
+          !perms?.has(PermissionsBitField.Flags.SendMessages) ||
+          !perms?.has(PermissionsBitField.Flags.AttachFiles)
+        ) {
+          res.status(403).json({
+            error: 'Le bot n’a pas la permission Joindre des fichiers dans #log-logoto.',
+          });
+          return;
+        }
+
+        try {
+          const attachment = new AttachmentBuilder(buf, { name: safeFilename });
+          const sent = await cfg.logChannel.send({
+            content: '🖼️ Image hébergée depuis le Dashboard Logoto',
+            files: [attachment],
+          });
+          const uploadedUrl = sent.attachments.first()?.url ?? '';
+          if (!isSafeImageUrl(uploadedUrl)) {
+            res.status(502).json({ error: 'Discord n’a pas renvoyé de lien valide.' });
+            return;
+          }
+
+          res.json({
+            url: uploadedUrl,
+            provider: 'discord',
+            hostName: `#${cfg.logChannel.name}`,
+          });
+          return;
+        } catch (err) {
+          console.error('[Logoto] Discord image upload error:', err);
+          res.status(502).json({
+            error: "Impossible d'envoyer l'image sur Discord.",
+          });
+          return;
+        }
+      }
+
+      try {
+        const result = await uploadToThirdPartyHost(buf, safeFilename, detected.mime);
+        res.json({
+          url: result.url,
+          provider: 'thirdparty',
+          hostName: result.hostName,
+        });
+      } catch (err) {
+        console.warn('[Logoto] Third-party image upload error:', err);
+        res.status(502).json({
+          error:
+            "L'hébergeur tiers est momentanément indisponible. Vous pouvez utiliser l'envoi vers Discord.",
+        });
+      }
     }
   );
 }

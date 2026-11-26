@@ -1,10 +1,12 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import {
   ChannelType,
+  OverwriteType,
   PermissionsBitField,
   type CategoryChannel,
   type EmbedBuilder,
   type Guild,
+  type OverwriteResolvable,
   type TextChannel,
 } from 'discord.js';
 import { normalizeLocale } from '../i18n/index.js';
@@ -262,11 +264,35 @@ export function findLogChannel(guild: Guild, category?: CategoryChannel | null):
   return candidates[0];
 }
 
-export function buildPrivateOverwrites(guild: Guild) {
+function getBotAllowPermissions(guild: Guild): bigint[] {
+  const allow: bigint[] = [
+    PermissionsBitField.Flags.ViewChannel,
+    PermissionsBitField.Flags.SendMessages,
+    PermissionsBitField.Flags.ManageChannels,
+    PermissionsBitField.Flags.EmbedLinks,
+    PermissionsBitField.Flags.AttachFiles,
+  ];
+  if (guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)) {
+    allow.push(PermissionsBitField.Flags.ManageWebhooks);
+  }
+  return allow;
+}
+
+function findBotManagedRoleId(guild: Guild, botId?: string): string | null {
+  const role =
+    (botId ? guild.roles.botRoleFor(botId) : null) ??
+    guild.members.me?.roles.botRole ??
+    null;
+  if (!role || role.id === guild.roles.everyone.id) return null;
+  return role.id;
+}
+
+export function buildPrivateOverwrites(guild: Guild): OverwriteResolvable[] {
   const botId = guild.client.user?.id;
-  const overwrites = [
+  const overwrites: OverwriteResolvable[] = [
     {
       id: guild.roles.everyone.id,
+      type: OverwriteType.Role,
       deny: [
         PermissionsBitField.Flags.ViewChannel,
         PermissionsBitField.Flags.ManageChannels,
@@ -275,20 +301,23 @@ export function buildPrivateOverwrites(guild: Guild) {
     },
   ];
 
+  const allow = getBotAllowPermissions(guild);
+  const botRoleId = findBotManagedRoleId(guild, botId);
+
+  if (botRoleId) {
+    overwrites.push({
+      id: botRoleId,
+      type: OverwriteType.Role,
+      allow,
+    });
+  }
+
   if (botId) {
-    const allow = [
-      PermissionsBitField.Flags.ViewChannel,
-      PermissionsBitField.Flags.SendMessages,
-      PermissionsBitField.Flags.ManageChannels,
-      PermissionsBitField.Flags.EmbedLinks,
-    ];
-    if (guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)) {
-      allow.push(PermissionsBitField.Flags.ManageWebhooks);
-    }
     overwrites.push({
       id: botId,
+      type: OverwriteType.Member,
       allow,
-    } as never);
+    });
   }
 
   return overwrites;
@@ -303,6 +332,22 @@ export async function ensureLogotoCategory(guild: Guild): Promise<CategoryChanne
           ViewChannel: false,
           ManageChannels: false,
           SendMessages: false,
+        })
+        .catch(() => {});
+    }
+    const botId = guild.client.user?.id;
+    const botRoleId = findBotManagedRoleId(guild, botId);
+    if (botRoleId && !existing.permissionOverwrites.cache.has(botRoleId)) {
+      await existing.permissionOverwrites
+        .edit(botRoleId, {
+          ViewChannel: true,
+          SendMessages: true,
+          ManageChannels: true,
+          EmbedLinks: true,
+          AttachFiles: true,
+          ...(guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)
+            ? { ManageWebhooks: true }
+            : {}),
         })
         .catch(() => {});
     }
@@ -338,16 +383,22 @@ export async function ensureLogChannel(
         .catch(() => {});
     }
     const botId = guild.client.user?.id;
-    if (botId && guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)) {
-      await existing.permissionOverwrites
-        .edit(botId, {
-          ViewChannel: true,
-          SendMessages: true,
-          ManageChannels: true,
-          EmbedLinks: true,
-          ManageWebhooks: true,
-        })
-        .catch(() => {});
+    const botRoleId = findBotManagedRoleId(guild, botId);
+    const botPermsPatch = {
+      ViewChannel: true,
+      SendMessages: true,
+      ManageChannels: true,
+      EmbedLinks: true,
+      AttachFiles: true,
+      ...(guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)
+        ? { ManageWebhooks: true }
+        : {}),
+    };
+    if (botRoleId) {
+      await existing.permissionOverwrites.edit(botRoleId, botPermsPatch).catch(() => {});
+    }
+    if (botId) {
+      await existing.permissionOverwrites.edit(botId, botPermsPatch).catch(() => {});
     }
     return { category, logChannel: existing, created: false };
   }

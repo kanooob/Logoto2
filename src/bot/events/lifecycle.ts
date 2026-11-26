@@ -1,4 +1,7 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ChannelType,
   EmbedBuilder,
   Events,
@@ -7,6 +10,7 @@ import {
   type Guild,
   type TextChannel,
 } from 'discord.js';
+import { buildSiteUrls, getConfiguredSiteOrigin } from '../../server/siteDomain.js';
 import { normalizeLocale, t } from '../i18n/index.js';
 import {
   botStartedAtUnix,
@@ -136,13 +140,31 @@ export function registerLifecycleEvents(client: Client): void {
 
       if (!targetChannel) return;
 
+      const siteOrigin = getConfiguredSiteOrigin();
+      const siteUrls = siteOrigin ? buildSiteUrls(siteOrigin, locale) : null;
+      const description = siteUrls
+        ? `${t(locale, 'welcomeDesc')}\n\n${t(locale, 'welcomeDashboardLine', { url: siteUrls.dashboard })}`
+        : t(locale, 'welcomeDesc');
+
       const welcomeEmbed = new EmbedBuilder()
         .setColor(PRIMARY_COLOR)
         .setTitle(t(locale, 'welcomeTitle'))
-        .setDescription(t(locale, 'welcomeDesc'))
+        .setDescription(description)
         .setTimestamp();
 
-      await targetChannel.send({ embeds: [welcomeEmbed] });
+      const components: ActionRowBuilder<ButtonBuilder>[] = [];
+      if (siteUrls) {
+        components.push(
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder()
+              .setLabel(t(locale, 'welcomeDashboardBtn'))
+              .setURL(siteUrls.dashboard)
+              .setStyle(ButtonStyle.Link)
+          )
+        );
+      }
+
+      await targetChannel.send({ embeds: [welcomeEmbed], components });
     } catch (err) {
       console.warn(`[Logoto] Error during guildCreate for ${guild.id}:`, err);
     }

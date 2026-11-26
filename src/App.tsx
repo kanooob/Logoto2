@@ -119,13 +119,9 @@ export default function App() {
     };
 
     void loadTelemetry();
-    const timer = window.setInterval(() => {
-      void loadTelemetry();
-    }, 30000);
 
     return () => {
       active = false;
-      window.clearInterval(timer);
     };
   }, []);
 

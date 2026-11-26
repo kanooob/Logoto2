@@ -101,6 +101,50 @@ export async function reportAdminHealth(client: Client): Promise<void> {
   }
 }
 
+async function refreshDiscordAttachmentUrlIfNeeded(rawUrl: string): Promise<string> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return rawUrl;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  const isDiscordCdn =
+    (host === 'cdn.discordapp.com' || host === 'media.discordapp.net') &&
+    parsed.pathname.startsWith('/attachments/');
+  if (!isDiscordCdn) {
+    return rawUrl;
+  }
+
+  const token = process.env.TOKEN?.trim();
+  if (!token) {
+    return rawUrl;
+  }
+
+  try {
+    const res = await fetch('https://discord.com/api/v10/attachments/refresh-urls', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bot ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ attachment_urls: [rawUrl] }),
+    });
+    if (!res.ok) return rawUrl;
+    const data = (await res.json()) as {
+      refreshed_urls?: Array<{ original?: string; refreshed?: string }>;
+    };
+    const refreshed = data.refreshed_urls?.[0]?.refreshed;
+    if (typeof refreshed === 'string' && isSafeImageUrl(refreshed)) {
+      return refreshed;
+    }
+  } catch {
+    // Fallback to original URL
+  }
+  return rawUrl;
+}
+
 async function applyEventToGuild(
   guild: Guild,
   config: GuildConfig,
@@ -125,7 +169,8 @@ async function applyEventToGuild(
           nonRetryable = true;
           throw new Error('Invalid or unsafe HTTPS image URL for icon');
         }
-        await guild.setIcon(value, reason);
+        const imageUrl = await refreshDiscordAttachmentUrlIfNeeded(value);
+        await guild.setIcon(imageUrl, reason);
         break;
       }
       case 'n': {
@@ -141,7 +186,8 @@ async function applyEventToGuild(
           nonRetryable = true;
           throw new Error('Invalid or unsafe HTTPS image URL for banner');
         }
-        await guild.setBanner(value, reason);
+        const imageUrl = await refreshDiscordAttachmentUrlIfNeeded(value);
+        await guild.setBanner(imageUrl, reason);
         break;
       }
       case 'i': {
@@ -149,7 +195,8 @@ async function applyEventToGuild(
           nonRetryable = true;
           throw new Error('Invalid or unsafe HTTPS image URL for invite splash');
         }
-        await guild.setSplash(value, reason);
+        const imageUrl = await refreshDiscordAttachmentUrlIfNeeded(value);
+        await guild.setSplash(imageUrl, reason);
         break;
       }
     }

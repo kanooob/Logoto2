@@ -83,6 +83,7 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
       inviteUrl = interaction.client.generateInvite({
         scopes: [OAuth2Scopes.Bot, OAuth2Scopes.ApplicationsCommands],
         permissions: [
+          PermissionsBitField.Flags.Administrator,
           PermissionsBitField.Flags.ManageGuild,
           PermissionsBitField.Flags.ManageChannels,
           PermissionsBitField.Flags.ManageWebhooks,
@@ -98,6 +99,7 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
 
   if (!inviteUrl && clientId) {
     const perms = (
+      PermissionsBitField.Flags.Administrator |
       PermissionsBitField.Flags.ManageGuild |
       PermissionsBitField.Flags.ManageChannels |
       PermissionsBitField.Flags.ManageWebhooks |

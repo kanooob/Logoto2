@@ -265,6 +265,8 @@ const MESSAGES = {
     welcomeDesc:
       "Logoto permet de programmer automatiquement des changements de **logo**, **nom**, **bannière** et **image d'invitation** selon votre fuseau horaire.\n\n" +
       "Un administrateur ou propriétaire du serveur peut lancer **`/setup`** pour initialiser la configuration.",
+    welcomeDashboardLine: "Vous pouvez également tout configurer depuis le **[Dashboard Web Logoto]({url})**.",
+    welcomeDashboardBtn: "Ouvrir le Dashboard",
   },
   en: {
     noPermission: "You must be the server owner or have **Administrator** or **Manage Server** permission to use this command.",
@@ -449,6 +451,8 @@ const MESSAGES = {
     welcomeDesc:
       "Logoto lets you automatically schedule **logo**, **name**, **banner**, and **invite splash** updates in your timezone.\n\n" +
       "A server owner or administrator can run **`/setup`** to initialize the configuration.",
+    welcomeDashboardLine: "You can also configure everything online via the **[Logoto Web Dashboard]({url})**.",
+    welcomeDashboardBtn: "Open Dashboard",
   },
 } as const;
 
