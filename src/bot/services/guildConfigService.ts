@@ -550,6 +550,7 @@ export async function enableRestoreRole(guild: Guild): Promise<RestoreRoleAction
 
   if (!me.roles.cache.has(role.id)) {
     await me.roles.add(role, 'Logoto Restore role assignment');
+    await guild.channels.fetch().catch(() => null);
   }
 
   const syncedChannels = await syncRestoreRoleOverwrites(guild, role);
