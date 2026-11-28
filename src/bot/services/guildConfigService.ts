@@ -538,7 +538,7 @@ export type RestoreRoleActionResult =
   | { ok: false; reason: 'missing_member' | 'missing_manage_roles' | 'role_hierarchy' };
 
 export async function enableRestoreRole(guild: Guild): Promise<RestoreRoleActionResult> {
-  const me = guild.members.me ?? (await guild.members.fetchMe().catch(() => null));
+  const me = (await guild.members.fetchMe().catch(() => null)) ?? guild.members.me;
   if (!me) {
     return { ok: false, reason: 'missing_member' };
   }
@@ -581,7 +581,7 @@ export type DisableRestoreRoleResult =
   | { ok: false; reason: 'missing_member' | 'missing_manage_roles' | 'role_hierarchy' };
 
 export async function disableRestoreRole(guild: Guild): Promise<DisableRestoreRoleResult> {
-  const me = guild.members.me ?? (await guild.members.fetchMe().catch(() => null));
+  const me = (await guild.members.fetchMe().catch(() => null)) ?? guild.members.me;
   if (!me) {
     return { ok: false, reason: 'missing_member' };
   }
@@ -686,13 +686,13 @@ export async function getGuildConfig(guild: Guild): Promise<GuildConfig> {
       lastRunDate: cached?.lastRunDate,
       category,
       logChannel,
-      restoreRoleEnabled: Boolean(restoreRole && (botHasRestoreRole || cached?.restoreRole)),
+      restoreRoleEnabled: botHasRestoreRole,
       restoreRoleId: restoreRole?.id ?? null,
       restoreRoleName: restoreRole?.name ?? null,
     };
   }
 
-  const restoreRoleEnabled = Boolean(restoreRole && (botHasRestoreRole || parsed.restoreRole));
+  const restoreRoleEnabled = botHasRestoreRole;
 
   verifiedGuildCache.set(guild.id, {
     categoryId: category?.id ?? cached?.categoryId,
@@ -784,7 +784,7 @@ export async function setGuildConfig(
     lastRunDate: nextLastRunDate,
     category,
     logChannel,
-    restoreRoleEnabled: Boolean(restoreRoleObj && (botHasRestoreRole || nextRestoreRole)),
+    restoreRoleEnabled: botHasRestoreRole,
     restoreRoleId: restoreRoleObj?.id ?? null,
     restoreRoleName: restoreRoleObj?.name ?? null,
   };

@@ -1434,11 +1434,69 @@ export function DashboardView({ locale }: DashboardViewProps) {
           {isFr ? 'Chargement des salons Discord…' : 'Loading Discord channels…'}
         </div>
       ) : !detail.botPermissionsOk ? (
-        <div className="rounded-xl bg-[#2b2d31] border border-[#f04747]/50 p-6 space-y-3">
-          <h3 className="font-display text-lg font-bold text-[#f04747]">
-            {isFr ? 'Permissions du bot manquantes' : 'Missing Bot Permissions'}
-          </h3>
-          <p className="text-sm text-[#F2F3F5]/85 whitespace-pre-line">{detail.botPermissionsError}</p>
+        <div className="rounded-xl bg-[#2b2d31] border border-[#f04747]/50 p-6 space-y-4 max-w-2xl">
+          <div className="space-y-2">
+            <h3 className="font-display text-lg font-bold text-[#f04747]">
+              {isFr ? 'Permissions du bot manquantes' : 'Missing Bot Permissions'}
+            </h3>
+            <p className="text-sm text-[#F2F3F5]/85 whitespace-pre-line">{detail.botPermissionsError}</p>
+          </div>
+
+          {detail.config.restoreRoleId && !detail.config.restoreRoleEnabled && (
+            <div className="rounded-lg bg-[#1e1f22] border border-[#a3ab72]/35 p-4 space-y-2.5">
+              <div className="flex items-start gap-2.5">
+                <Shield className="w-4 h-4 text-[#a3ab72] shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="space-y-1">
+                  <p className="text-xs font-bold text-[#F2F3F5]">
+                    {isFr
+                      ? `Rôle ${detail.config.restoreRoleName || 'Logoto Restore'} détecté sur ce serveur`
+                      : `${detail.config.restoreRoleName || 'Logoto Restore'} role detected on this server`}
+                  </p>
+                  <p className="text-xs text-[#b9bbbe] leading-relaxed">
+                    {detail.botCanManageRoles
+                      ? isFr
+                        ? 'Le bot ne possède plus ce rôle. Réattribuez-lui le rôle Logoto Restore pour lui redonner accès aux salons de configuration.'
+                        : 'The bot no longer has this role. Re-assign the Logoto Restore role to restore access to your configuration channels.'
+                      : isFr
+                        ? 'Le bot n’a pas la permission Gérer les rôles (ManageRoles). Attribuez-lui le rôle Logoto Restore manuellement dans Discord puis cliquez sur Actualiser.'
+                        : 'The bot lacks Manage Roles (ManageRoles) permission. Assign the Logoto Restore role manually in Discord, then click Refresh.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {detail.config.restoreRoleId && !detail.config.restoreRoleEnabled && detail.botCanManageRoles && (
+              <button
+                type="button"
+                disabled={actionBusy}
+                onClick={() => void handleUpdateConfig({ restoreRole: true })}
+                className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-xs font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
+              >
+                <Shield className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>
+                  {actionBusy
+                    ? isFr
+                      ? 'Attribution…'
+                      : 'Assigning…'
+                    : isFr
+                      ? 'Attribuer le rôle Logoto Restore au bot'
+                      : 'Assign Logoto Restore role to bot'}
+                </span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              disabled={actionBusy || detailLoading}
+              onClick={() => void loadGuildDetail(detail.guild.id)}
+              className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-[#1e1f22] hover:bg-[#313338] border border-white/15 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-[#a3ab72] ${detailLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+              <span>{isFr ? 'Actualiser' : 'Refresh'}</span>
+            </button>
+          </div>
         </div>
       ) : !detail.configured ? (
         /* Live /setup Flow */

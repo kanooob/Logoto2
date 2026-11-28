@@ -137,6 +137,7 @@ async function resolveAuthorizedBotGuild(
   }
 
   await Promise.all([
+    guild.members.fetchMe().catch(() => null),
     guild.channels.fetch().catch(() => null),
     guild.roles.fetch().catch(() => null),
   ]);
@@ -330,10 +331,27 @@ export function registerDashboardRoutes(
     const nextLocale: SupportedLocale =
       req.body?.locale === 'fr' || req.body?.locale === 'en' ? req.body.locale : current.locale;
 
-    const perms = await checkBotGuildPermissions(guild, nextLocale);
-    if (!perms.ok) {
-      res.status(403).json({ error: perms.embed.data.description ?? 'Permissions du bot manquantes.' });
-      return;
+    if (req.body?.restoreRole === true) {
+      const roleRes = await enableRestoreRole(guild);
+      if (!roleRes.ok) {
+        res.status(403).json({ error: getRestoreErrorMessage(nextLocale, roleRes.reason) });
+        return;
+      }
+      await guild.channels.fetch().catch(() => null);
+    }
+
+    const needsChannelPermsCheck =
+      req.body?.timezone !== undefined ||
+      Boolean(req.body?.locale) ||
+      req.body?.restoreRole === false ||
+      req.body?.syncRestoreRole === true;
+
+    if (needsChannelPermsCheck) {
+      const perms = await checkBotGuildPermissions(guild, nextLocale);
+      if (!perms.ok) {
+        res.status(403).json({ error: perms.embed.data.description ?? 'Permissions du bot manquantes.' });
+        return;
+      }
     }
 
     let nextTz: string | undefined;
@@ -353,21 +371,13 @@ export function registerDashboardRoutes(
       });
     }
 
-    if (typeof req.body?.restoreRole === 'boolean') {
-      if (req.body.restoreRole) {
-        const roleRes = await enableRestoreRole(guild);
-        if (!roleRes.ok) {
-          res.status(403).json({ error: getRestoreErrorMessage(nextLocale, roleRes.reason) });
-          return;
-        }
-      } else {
-        const roleRes = await disableRestoreRole(guild);
-        if (!roleRes.ok) {
-          res.status(403).json({ error: getRestoreErrorMessage(nextLocale, roleRes.reason) });
-          return;
-        }
+    if (req.body?.restoreRole === false) {
+      const roleRes = await disableRestoreRole(guild);
+      if (!roleRes.ok) {
+        res.status(403).json({ error: getRestoreErrorMessage(nextLocale, roleRes.reason) });
+        return;
       }
-    } else if (req.body?.syncRestoreRole === true) {
+    } else if (req.body?.restoreRole !== true && req.body?.syncRestoreRole === true) {
       const existingRole = findRestoreRole(guild);
       if (existingRole) {
         await syncRestoreRoleOverwrites(guild, existingRole);
