@@ -251,10 +251,15 @@ export function DashboardView({ locale }: DashboardViewProps) {
     [authToken, isFr]
   );
 
+  const loadGuildsRef = useRef(loadGuilds);
+  useEffect(() => {
+    loadGuildsRef.current = loadGuilds;
+  }, [loadGuilds]);
+
   const loadGuildDetail = useCallback(
     async (guildId: string) => {
       setDetailLoading(true);
-      setDetail(null);
+      setDetail((prev) => (prev?.guild.id === guildId ? prev : null));
       setFormOpen(false);
       setConfirmDeleteId(null);
       try {
@@ -272,18 +277,27 @@ export function DashboardView({ locale }: DashboardViewProps) {
         const data = (await res.json()) as GuildDetail;
         setDetail(data);
         setCustomTzInput(data.config.timezone);
-        setGuilds((prev) =>
-          prev.map((g) =>
-            g.id === guildId
-              ? {
-                  ...g,
-                  configured: data.configured,
-                  timezone: data.config.timezone,
-                  locale: data.config.locale,
-                }
-              : g
-          )
-        );
+        setGuilds((prev) => {
+          let changed = false;
+          const next = prev.map((g) => {
+            if (g.id !== guildId) return g;
+            if (
+              g.configured === data.configured &&
+              g.timezone === data.config.timezone &&
+              g.locale === data.config.locale
+            ) {
+              return g;
+            }
+            changed = true;
+            return {
+              ...g,
+              configured: data.configured,
+              timezone: data.config.timezone,
+              locale: data.config.locale,
+            };
+          });
+          return changed ? next : prev;
+        });
       } catch {
         setBannerMsg({
           kind: 'err',
@@ -316,7 +330,7 @@ export function DashboardView({ locale }: DashboardViewProps) {
           const meData = (await meRes.json()) as { authenticated: boolean; user: DiscordUser | null };
           if (meData.authenticated && meData.user) {
             setUser(meData.user);
-            await loadGuilds(null);
+            await loadGuildsRef.current(null);
           }
         }
       } catch {
@@ -329,7 +343,7 @@ export function DashboardView({ locale }: DashboardViewProps) {
     return () => {
       active = false;
     };
-  }, [loadGuilds, locale]);
+  }, [locale]);
 
   // Listen for OAuth popup completion
   useEffect(() => {
@@ -395,13 +409,17 @@ export function DashboardView({ locale }: DashboardViewProps) {
     [guilds, selectedGuildId]
   );
 
+  const selectedGuildIdToLoad = selectedGuildSummary?.id ?? null;
+  const selectedGuildBotPresent = Boolean(selectedGuildSummary?.botPresent);
+  const userId = user?.id ?? null;
+
   useEffect(() => {
-    if (user && selectedGuildSummary?.botPresent && botOnline) {
-      void loadGuildDetail(selectedGuildSummary.id);
+    if (userId && selectedGuildIdToLoad && selectedGuildBotPresent && botOnline) {
+      void loadGuildDetail(selectedGuildIdToLoad);
     } else {
       setDetail(null);
     }
-  }, [user, selectedGuildSummary, botOnline, loadGuildDetail]);
+  }, [userId, selectedGuildIdToLoad, selectedGuildBotPresent, botOnline, loadGuildDetail]);
 
   const handleSelectGuild = (guildId: string) => {
     setSelectedGuildId(guildId);
@@ -411,6 +429,7 @@ export function DashboardView({ locale }: DashboardViewProps) {
     setTypeFilter('all');
     setFormOpen(false);
     setConfirmDeleteId(null);
+    setSetupRestoreRole(false);
   };
 
   const handleBackToServers = () => {
@@ -758,6 +777,19 @@ export function DashboardView({ locale }: DashboardViewProps) {
         return;
       }
       setDetail(data);
+      setCustomTzInput(data.config.timezone);
+      setGuilds((prev) =>
+        prev.map((g) =>
+          g.id === data.guild.id
+            ? {
+                ...g,
+                configured: data.configured,
+                timezone: data.config.timezone,
+                locale: data.config.locale,
+              }
+            : g
+        )
+      );
       if (data.importSummary) {
         const s = data.importSummary;
         setBannerMsg({

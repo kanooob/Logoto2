@@ -284,8 +284,10 @@ function getBotAllowPermissions(guild: Guild): bigint[] {
     PermissionsBitField.Flags.SendMessages,
     PermissionsBitField.Flags.ManageChannels,
     PermissionsBitField.Flags.EmbedLinks,
-    PermissionsBitField.Flags.AttachFiles,
   ];
+  if (guild.members.me?.permissions.has(PermissionsBitField.Flags.AttachFiles)) {
+    allow.push(PermissionsBitField.Flags.AttachFiles);
+  }
   if (guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)) {
     allow.push(PermissionsBitField.Flags.ManageWebhooks);
   }
@@ -298,11 +300,23 @@ function getBotPermsPatch(guild: Guild): Record<string, boolean> {
     SendMessages: true,
     ManageChannels: true,
     EmbedLinks: true,
-    AttachFiles: true,
+    ...(guild.members.me?.permissions.has(PermissionsBitField.Flags.AttachFiles)
+      ? { AttachFiles: true }
+      : {}),
     ...(guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)
       ? { ManageWebhooks: true }
       : {}),
   };
+}
+
+function needsBotOverwriteUpdate(
+  channel: CategoryChannel | TextChannel,
+  targetId: string,
+  allowFlags: bigint[]
+): boolean {
+  const existing = channel.permissionOverwrites.cache.get(targetId);
+  if (!existing) return true;
+  return allowFlags.some((flag) => !existing.allow.has(flag));
 }
 
 function findBotManagedRoleId(guild: Guild, botId?: string): string | null {
@@ -437,15 +451,16 @@ export async function ensureLogChannel(
     }
     const botId = guild.client.user?.id;
     const botRoleId = findBotManagedRoleId(guild, botId);
+    const botAllowFlags = getBotAllowPermissions(guild);
     const botPermsPatch = getBotPermsPatch(guild);
-    if (botRoleId) {
+    if (botRoleId && needsBotOverwriteUpdate(existing, botRoleId, botAllowFlags)) {
       await existing.permissionOverwrites.edit(botRoleId, botPermsPatch).catch(() => {});
     }
-    if (botId) {
+    if (botId && needsBotOverwriteUpdate(existing, botId, botAllowFlags)) {
       await existing.permissionOverwrites.edit(botId, botPermsPatch).catch(() => {});
     }
     const restoreRole = findRestoreRole(guild);
-    if (restoreRole) {
+    if (restoreRole && needsBotOverwriteUpdate(existing, restoreRole.id, botAllowFlags)) {
       await existing.permissionOverwrites.edit(restoreRole.id, botPermsPatch).catch(() => {});
     }
     return { category, logChannel: existing, created: false };
@@ -544,7 +559,7 @@ export async function enableRestoreRole(guild: Guild): Promise<RestoreRoleAction
       reason: 'Logoto Restore role (no server-wide permissions)',
     });
     createdRole = true;
-  } else if (role.position >= me.roles.highest.position) {
+  } else if (!me.roles.cache.has(role.id) && role.position >= me.roles.highest.position) {
     return { ok: false, reason: 'role_hierarchy' };
   }
 
