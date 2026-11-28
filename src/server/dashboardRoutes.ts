@@ -12,7 +12,11 @@ import {
   upsertEvent,
 } from '../bot/services/eventService.js';
 import {
+  canBotManageRoles,
+  disableRestoreRole,
+  enableRestoreRole,
   ensureLogChannel,
+  findRestoreRole,
   formatConfigTopic,
   getGuildConfig,
   getLocalDateParts,
@@ -20,6 +24,7 @@ import {
   normalizeTimeZone,
   parseConfigFromTopic,
   setGuildConfig,
+  syncRestoreRoleOverwrites,
 } from '../bot/services/guildConfigService.js';
 import { PRIMARY_COLOR, type EventType, type SupportedLocale } from '../bot/types.js';
 import {
@@ -131,8 +136,20 @@ async function resolveAuthorizedBotGuild(
     return null;
   }
 
-  await guild.channels.fetch().catch(() => null);
+  await Promise.all([
+    guild.channels.fetch().catch(() => null),
+    guild.roles.fetch().catch(() => null),
+  ]);
   return guild;
+}
+
+function getRestoreErrorMessage(
+  locale: SupportedLocale,
+  reason: 'missing_member' | 'missing_manage_roles' | 'role_hierarchy'
+): string {
+  if (reason === 'missing_manage_roles') return t(locale, 'restoreMissingManageRoles');
+  if (reason === 'role_hierarchy') return t(locale, 'restoreRoleHierarchyError');
+  return t(locale, 'restoreMissingMember');
 }
 
 async function buildGuildDetailResponse(guild: Guild) {
@@ -154,11 +171,17 @@ async function buildGuildDetailResponse(guild: Guild) {
       locale: config.locale,
       logChannelId: config.logChannel?.id ?? null,
       logChannelName: config.logChannel?.name ?? null,
-      topic: formatConfigTopic(config.timezone, config.locale),
+      restoreRoleEnabled: config.restoreRoleEnabled,
+      restoreRoleId: config.restoreRoleId ?? null,
+      restoreRoleName: config.restoreRoleName ?? null,
+      topic: formatConfigTopic(config.timezone, config.locale, {
+        restoreRole: config.restoreRoleEnabled,
+      }),
       localTime: formatLocalDateTimeDisplay(config.timezone, config.locale),
     },
     botPermissionsOk: botPerms.ok,
     botPermissionsError: botPerms.ok ? null : botPerms.embed.data.description ?? null,
+    botCanManageRoles: canBotManageRoles(guild),
     events: events.map((ev) => ({
       id: ev.channel.id,
       channelName: buildEventChannelName(ev.type, ev.day, ev.month),
@@ -243,6 +266,7 @@ export function registerDashboardRoutes(
 
     const rawLocale = req.body?.locale === 'en' ? 'en' : 'fr';
     const rawTz = typeof req.body?.timezone === 'string' ? req.body.timezone.trim() : 'UTC';
+    const wantRestoreRole = req.body?.restoreRole === true;
     if (!isValidTimeZone(rawTz)) {
       res.status(400).json({ error: t(rawLocale, 'invalidTimezone', { tz: rawTz }) });
       return;
@@ -265,8 +289,18 @@ export function registerDashboardRoutes(
       lastRunDate: existing.lastRunDate ?? todayKey,
     });
 
+    if (wantRestoreRole) {
+      const roleRes = await enableRestoreRole(guild);
+      if (!roleRes.ok) {
+        res.status(403).json({ error: getRestoreErrorMessage(rawLocale, roleRes.reason) });
+        return;
+      }
+    }
+
     if (created) {
-      const topic = formatConfigTopic(updated.timezone, updated.locale);
+      const topic = formatConfigTopic(updated.timezone, updated.locale, {
+        restoreRole: wantRestoreRole || updated.restoreRoleEnabled,
+      });
       const summaryEmbed = new EmbedBuilder()
         .setColor(PRIMARY_COLOR)
         .setTitle(t(updated.locale, 'pinnedSummaryTitle'))
@@ -287,7 +321,7 @@ export function registerDashboardRoutes(
     res.json(await buildGuildDetailResponse(guild));
   });
 
-  // Update timezone and/or language (/settings -> Fuseau horaire / Langue)
+  // Update timezone, language, and/or Logoto Restore role (/settings)
   app.patch('/api/dashboard/guilds/:guildId/config', requireDiscordAuth, async (req: AuthenticatedRequest, res) => {
     const guild = await resolveAuthorizedBotGuild(req, res, getDiscordClient);
     if (!guild) return;
@@ -312,10 +346,39 @@ export function registerDashboardRoutes(
       nextTz = candidate;
     }
 
-    await setGuildConfig(guild, {
-      timezone: nextTz,
-      locale: req.body?.locale ? nextLocale : undefined,
-    });
+    if (nextTz !== undefined || req.body?.locale) {
+      await setGuildConfig(guild, {
+        timezone: nextTz,
+        locale: req.body?.locale ? nextLocale : undefined,
+      });
+    }
+
+    if (typeof req.body?.restoreRole === 'boolean') {
+      if (req.body.restoreRole) {
+        const roleRes = await enableRestoreRole(guild);
+        if (!roleRes.ok) {
+          res.status(403).json({ error: getRestoreErrorMessage(nextLocale, roleRes.reason) });
+          return;
+        }
+      } else {
+        const roleRes = await disableRestoreRole(guild);
+        if (!roleRes.ok) {
+          res.status(403).json({ error: getRestoreErrorMessage(nextLocale, roleRes.reason) });
+          return;
+        }
+      }
+    } else if (req.body?.syncRestoreRole === true) {
+      const existingRole = findRestoreRole(guild);
+      if (existingRole) {
+        await syncRestoreRoleOverwrites(guild, existingRole);
+      } else {
+        const roleRes = await enableRestoreRole(guild);
+        if (!roleRes.ok) {
+          res.status(403).json({ error: getRestoreErrorMessage(nextLocale, roleRes.reason) });
+          return;
+        }
+      }
+    }
 
     await guild.channels.fetch().catch(() => null);
     res.json(await buildGuildDetailResponse(guild));
@@ -492,7 +555,9 @@ export function registerDashboardRoutes(
       ];
 
       if (config.logChannel) {
-        const topic = formatConfigTopic(config.timezone, config.locale);
+        const topic = formatConfigTopic(config.timezone, config.locale, {
+          restoreRole: config.restoreRoleEnabled,
+        });
         lines.push(`# Channel ${config.logChannel.name} | Created-At: ${config.logChannel.createdAt.toISOString()}`);
         lines.push(`${config.logChannel.name}:${topic}`);
       }
@@ -551,7 +616,11 @@ export function registerDashboardRoutes(
           await setGuildConfig(guild, {
             timezone: parsedCfg.timezone,
             locale: parsedCfg.locale,
+            restoreRole: parsedCfg.restoreRole,
           });
+          if (parsedCfg.restoreRole) {
+            await enableRestoreRole(guild).catch(() => {});
+          }
           configUpdated += 1;
           continue;
         }

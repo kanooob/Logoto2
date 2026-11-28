@@ -37,12 +37,17 @@ import {
   upsertEvent,
 } from '../services/eventService.js';
 import {
+  disableRestoreRole,
+  enableRestoreRole,
+  findRestoreRole,
   formatConfigTopic,
   getGuildConfig,
   isValidTimeZone,
   normalizeTimeZone,
   parseConfigFromTopic,
+  RESTORE_ROLE_NAME,
   setGuildConfig,
+  syncRestoreRoleOverwrites,
 } from '../services/guildConfigService.js';
 import { PRIMARY_COLOR, type EventType, type SupportedLocale } from '../types.js';
 import {
@@ -85,11 +90,23 @@ async function buildMainSettingsPayload(guild: Guild, fallbackLocale?: Supported
   }
 
   const warningNote = !config.logChannel ? `\n\n⚠️ ${t(locale, 'settingsNotConfigured')}` : '';
+  const restoreStatus = config.restoreRoleEnabled
+    ? `✅ ${t(locale, 'settingsRestoreStatusOn', {
+        role: config.restoreRoleId ? `<@&${config.restoreRoleId}>` : `\`${RESTORE_ROLE_NAME}\``,
+      })}`
+    : `❌ ${t(locale, 'settingsRestoreStatusOff')}`;
 
   const embed = new EmbedBuilder()
     .setColor(PRIMARY_COLOR)
     .setTitle(t(locale, 'settingsTitle', { guild: guild.name }))
-    .setDescription(`${t(locale, 'settingsDesc', { tz: config.timezone, lang: locale, localTime })}${warningNote}`)
+    .setDescription(
+      `${t(locale, 'settingsDesc', {
+        tz: config.timezone,
+        lang: locale,
+        localTime,
+        restoreStatus,
+      })}${warningNote}`
+    )
     .addFields({
       name: t(locale, 'settingsEventsField', { count: events.length }),
       value: lines.length > 0 ? lines.join('\n') : t(locale, 'settingsNoEvents'),
@@ -125,7 +142,11 @@ async function buildMainSettingsPayload(guild: Guild, fallbackLocale?: Supported
     new ButtonBuilder()
       .setCustomId('settings:import')
       .setLabel(t(locale, 'settingsBtnImport'))
-      .setStyle(ButtonStyle.Secondary)
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('settings:menu_restore')
+      .setLabel(t(locale, 'settingsBtnRestore'))
+      .setStyle(config.restoreRoleEnabled ? ButtonStyle.Success : ButtonStyle.Secondary)
   );
 
   return { embeds: [embed], components: [row1, row2] };
@@ -194,6 +215,49 @@ function buildLanguagePayload(locale: SupportedLocale) {
     embeds: [embed],
     components: [new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(menu), backRow],
   };
+}
+
+async function buildRestoreRolePayload(guild: Guild, locale: SupportedLocale) {
+  const config = await getGuildConfig(guild);
+  const status = config.restoreRoleEnabled
+    ? `✅ ${t(locale, 'settingsRestoreStatusOn', {
+        role: config.restoreRoleId ? `<@&${config.restoreRoleId}>` : `\`${RESTORE_ROLE_NAME}\``,
+      })}`
+    : `❌ ${t(locale, 'settingsRestoreStatusOff')}`;
+
+  const embed = new EmbedBuilder()
+    .setColor(PRIMARY_COLOR)
+    .setTitle(t(locale, 'settingsRestoreTitle'))
+    .setDescription(t(locale, 'settingsRestoreDesc', { status }));
+
+  const row = new ActionRowBuilder<ButtonBuilder>();
+  if (config.restoreRoleEnabled) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId('settings:restore_sync')
+        .setLabel(t(locale, 'settingsRestoreSyncBtn'))
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId('settings:restore_disable')
+        .setLabel(t(locale, 'settingsRestoreDisableBtn'))
+        .setStyle(ButtonStyle.Danger)
+    );
+  } else {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId('settings:restore_enable')
+        .setLabel(t(locale, 'settingsRestoreEnableBtn'))
+        .setStyle(ButtonStyle.Success)
+    );
+  }
+  row.addComponents(
+    new ButtonBuilder()
+      .setCustomId('settings:home')
+      .setLabel(t(locale, 'back'))
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row] };
 }
 
 function buildTypeAndMonthRows(
@@ -657,6 +721,105 @@ export async function handleSettingsInteraction(
       return true;
     }
 
+    if (cid === 'settings:menu_restore') {
+      await interaction.update(await buildRestoreRolePayload(guild, locale));
+      return true;
+    }
+
+    if (cid === 'settings:restore_enable') {
+      await interaction.deferUpdate();
+      const result = await enableRestoreRole(guild);
+      if (!result.ok) {
+        const msgKey =
+          result.reason === 'missing_manage_roles'
+            ? 'restoreMissingManageRoles'
+            : result.reason === 'role_hierarchy'
+              ? 'restoreRoleHierarchyError'
+              : 'restoreMissingMember';
+        await interaction.followUp({
+          content: t(locale, msgKey),
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      }
+
+      await interaction.editReply(await buildRestoreRolePayload(guild, locale));
+      await interaction.followUp({
+        content: t(locale, 'settingsRestoreEnabledMsg', {
+          role: `<@&${result.role.id}>`,
+          count: result.syncedChannels,
+        }),
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    if (cid === 'settings:restore_sync') {
+      await interaction.deferUpdate();
+      const existingRole = findRestoreRole(guild);
+      if (!existingRole) {
+        const result = await enableRestoreRole(guild);
+        if (!result.ok) {
+          const msgKey =
+            result.reason === 'missing_manage_roles'
+              ? 'restoreMissingManageRoles'
+              : result.reason === 'role_hierarchy'
+                ? 'restoreRoleHierarchyError'
+                : 'restoreMissingMember';
+          await interaction.followUp({
+            content: t(locale, msgKey),
+            flags: MessageFlags.Ephemeral,
+          });
+          return true;
+        }
+        await interaction.editReply(await buildRestoreRolePayload(guild, locale));
+        await interaction.followUp({
+          content: t(locale, 'settingsRestoreSyncedMsg', {
+            role: `<@&${result.role.id}>`,
+            count: result.syncedChannels,
+          }),
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      }
+
+      const synced = await syncRestoreRoleOverwrites(guild, existingRole);
+      await interaction.editReply(await buildRestoreRolePayload(guild, locale));
+      await interaction.followUp({
+        content: t(locale, 'settingsRestoreSyncedMsg', {
+          role: `<@&${existingRole.id}>`,
+          count: synced,
+        }),
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
+    if (cid === 'settings:restore_disable') {
+      await interaction.deferUpdate();
+      const result = await disableRestoreRole(guild);
+      if (!result.ok) {
+        const msgKey =
+          result.reason === 'missing_manage_roles'
+            ? 'restoreMissingManageRoles'
+            : result.reason === 'role_hierarchy'
+              ? 'restoreRoleHierarchyError'
+              : 'restoreMissingMember';
+        await interaction.followUp({
+          content: t(locale, msgKey),
+          flags: MessageFlags.Ephemeral,
+        });
+        return true;
+      }
+
+      await interaction.editReply(await buildRestoreRolePayload(guild, locale));
+      await interaction.followUp({
+        content: t(locale, 'settingsRestoreDisabledMsg'),
+        flags: MessageFlags.Ephemeral,
+      });
+      return true;
+    }
+
     if (cid === 'settings:export') {
       const events = await listEvents(guild);
       const createdAtIso = new Date().toISOString();
@@ -671,7 +834,9 @@ export async function handleSettingsInteraction(
 
       if (config.logChannel) {
         const logCreatedAt = config.logChannel.createdAt.toISOString();
-        const topic = formatConfigTopic(config.timezone, config.locale);
+        const topic = formatConfigTopic(config.timezone, config.locale, {
+          restoreRole: config.restoreRoleEnabled,
+        });
         lines.push(`# Channel ${config.logChannel.name} | Created-At: ${logCreatedAt}`);
         lines.push(`${config.logChannel.name}:${topic}`);
         exportedCount += 1;
@@ -811,7 +976,11 @@ export async function handleSettingsInteraction(
               await setGuildConfig(guild, {
                 timezone: parsedCfg.timezone,
                 locale: parsedCfg.locale,
+                restoreRole: parsedCfg.restoreRole,
               });
+              if (parsedCfg.restoreRole) {
+                await enableRestoreRole(guild).catch(() => {});
+              }
               configUpdated += 1;
               continue;
             }

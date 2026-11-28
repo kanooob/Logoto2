@@ -126,7 +126,10 @@ const MESSAGES = {
     settingsDesc:
       "**Fuseau horaire** : `{tz}`\n" +
       "**Langue** : `{lang}`\n" +
-      "**Date et heure locales** : `{localTime}`",
+      "**Date et heure locales** : `{localTime}`\n" +
+      "**Rôle de restauration** : {restoreStatus}",
+    settingsRestoreStatusOn: "Activé ({role})",
+    settingsRestoreStatusOff: "Désactivé",
     settingsEventsField: "Événements programmés ({count})",
     settingsNoEvents: "Aucun événement programmé pour le moment. Cliquez sur **Créer un événement** pour commencer.",
     settingsBtnTimezone: "Fuseau horaire",
@@ -135,11 +138,26 @@ const MESSAGES = {
     settingsBtnManageEvent: "Modifier / Supprimer",
     settingsBtnExport: "Exporter",
     settingsBtnImport: "Importer",
+    settingsBtnRestore: "Logoto Restore",
     settingsNotConfigured: "Logoto n'est pas encore initialisé sur ce serveur (ou `log-logoto` est manquant). Lancez `/setup` ou utilisez les contrôles ci-dessous pour configurer.",
     settingsTzTitle: "Modifier le fuseau horaire",
     settingsTzDesc: "Fuseau actuel : `{tz}`\nChoisissez un fuseau IANA ci-dessous (gère l'heure d'été) ou saisissez un identifiant **IANA** ou décalage fixe **UTC±** (ex. `Europe/Paris`, `UTC+1`).",
     settingsLangTitle: "Modifier la langue",
     settingsLangDesc: "Langue actuelle : `{lang}`\nChoisissez la nouvelle langue du serveur.",
+    settingsRestoreTitle: "Rôle de restauration — Logoto Restore",
+    settingsRestoreDesc:
+      "Ce rôle (`Logoto Restore`) ne possède **aucune autorisation particulière** sur le serveur. Lorsqu'il est activé, Logoto s'ajoute ce rôle et lui attribue exactement **les mêmes permissions que le bot** sur la catégorie `Logoto`, `#log-logoto` et tous les salons d'événements.\n\n" +
+      "Cela permet au bot de **retrouver automatiquement ses salons de configuration** si vous le retirez puis le réinvitez sur le serveur.\n\n" +
+      "**Statut actuel** : {status}",
+    settingsRestoreEnableBtn: "Activer Logoto Restore",
+    settingsRestoreDisableBtn: "Désactiver & supprimer le rôle",
+    settingsRestoreSyncBtn: "Synchroniser les salons",
+    settingsRestoreEnabledMsg: "Le rôle {role} a été activé et appliqué sur **{count}** salon(s) Logoto.",
+    settingsRestoreDisabledMsg: "Le rôle `Logoto Restore` a été désactivé et supprimé du serveur.",
+    settingsRestoreSyncedMsg: "Permissions de {role} synchronisées sur **{count}** salon(s) Logoto.",
+    restoreMissingManageRoles: "Logoto n'a pas la permission **Gérer les rôles** (`ManageRoles`) pour créer ou gérer le rôle `Logoto Restore`.",
+    restoreRoleHierarchyError: "Le rôle `Logoto Restore` est placé au-dessus du rôle le plus élevé de Logoto. Déplacez le rôle du bot au-dessus dans les paramètres du serveur.",
+    restoreMissingMember: "Impossible de récupérer le profil du bot sur ce serveur.",
 
     // Create Event
     createEventTitle: "Créer un événement programmé",
@@ -267,6 +285,8 @@ const MESSAGES = {
       "Un administrateur ou propriétaire du serveur peut lancer **`/setup`** pour initialiser la configuration.",
     welcomeDashboardLine: "Vous pouvez également tout configurer depuis le **[Dashboard Web Logoto]({url})**.",
     welcomeDashboardBtn: "Ouvrir le Dashboard",
+    logRestoredTitle: "Accès restauré via Logoto Restore",
+    logRestoredDesc: "Logoto a retrouvé automatiquement l'accès à ses salons de configuration grâce au rôle `{roleName}` (**{count}** salon(s) synchronisé(s)).",
   },
   en: {
     noPermission: "You must be the server owner or have **Administrator** or **Manage Server** permission to use this command.",
@@ -312,7 +332,10 @@ const MESSAGES = {
     settingsDesc:
       "**Timezone**: `{tz}`\n" +
       "**Language**: `{lang}`\n" +
-      "**Local date & time**: `{localTime}`",
+      "**Local date & time**: `{localTime}`\n" +
+      "**Restore role**: {restoreStatus}",
+    settingsRestoreStatusOn: "Enabled ({role})",
+    settingsRestoreStatusOff: "Disabled",
     settingsEventsField: "Scheduled events ({count})",
     settingsNoEvents: "No scheduled events yet. Click **Create event** to get started.",
     settingsBtnTimezone: "Timezone",
@@ -321,11 +344,26 @@ const MESSAGES = {
     settingsBtnManageEvent: "Edit / Delete",
     settingsBtnExport: "Export",
     settingsBtnImport: "Import",
+    settingsBtnRestore: "Logoto Restore",
     settingsNotConfigured: "Logoto is not initialized on this server yet (or `log-logoto` is missing). Run `/setup` or use the controls below to configure.",
     settingsTzTitle: "Change Timezone",
     settingsTzDesc: "Current timezone: `{tz}`\nChoose an IANA timezone below (supports DST) or enter a custom **IANA** or fixed **UTC±** offset (e.g. `Europe/Paris`, `UTC+1`).",
     settingsLangTitle: "Change Language",
     settingsLangDesc: "Current language: `{lang}`\nSelect the new server language.",
+    settingsRestoreTitle: "Restore Role — Logoto Restore",
+    settingsRestoreDesc:
+      "This role (`Logoto Restore`) has **no special server-wide permissions**. When enabled, Logoto assigns it to itself and mirrors **its exact channel permissions** onto the `Logoto` category, `#log-logoto`, and every event channel.\n\n" +
+      "This lets Logoto **automatically recover access to your configuration channels** if you remove and re-invite the bot.\n\n" +
+      "**Current status**: {status}",
+    settingsRestoreEnableBtn: "Enable Logoto Restore",
+    settingsRestoreDisableBtn: "Disable & delete role",
+    settingsRestoreSyncBtn: "Sync channels",
+    settingsRestoreEnabledMsg: "Role {role} has been enabled and applied to **{count}** Logoto channel(s).",
+    settingsRestoreDisabledMsg: "The `Logoto Restore` role has been disabled and deleted from the server.",
+    settingsRestoreSyncedMsg: "Permissions for {role} synced across **{count}** Logoto channel(s).",
+    restoreMissingManageRoles: "Logoto is missing the **Manage Roles** (`ManageRoles`) permission to create or manage the `Logoto Restore` role.",
+    restoreRoleHierarchyError: "The `Logoto Restore` role is positioned above Logoto's highest role. Move Logoto's role higher in Server Settings.",
+    restoreMissingMember: "Unable to fetch the bot's member profile on this server.",
 
     // Create Event
     createEventTitle: "Create Scheduled Event",
@@ -453,6 +491,8 @@ const MESSAGES = {
       "A server owner or administrator can run **`/setup`** to initialize the configuration.",
     welcomeDashboardLine: "You can also configure everything online via the **[Logoto Web Dashboard]({url})**.",
     welcomeDashboardBtn: "Open Dashboard",
+    logRestoredTitle: "Access Restored via Logoto Restore",
+    logRestoredDesc: "Logoto automatically recovered access to your configuration channels using the `{roleName}` role (**{count}** channel(s) synced).",
   },
 } as const;
 

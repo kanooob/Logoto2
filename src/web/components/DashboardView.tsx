@@ -16,6 +16,7 @@ import {
   Search,
   Server,
   Settings,
+  Shield,
   Trash2,
   Upload,
   X,
@@ -90,11 +91,15 @@ interface GuildDetail {
     locale: WebLocale;
     logChannelId: string | null;
     logChannelName: string | null;
+    restoreRoleEnabled: boolean;
+    restoreRoleId: string | null;
+    restoreRoleName: string | null;
     topic: string;
     localTime: string;
   };
   botPermissionsOk: boolean;
   botPermissionsError: string | null;
+  botCanManageRoles: boolean;
   events: GuildEventItem[];
   importSummary?: {
     created: number;
@@ -158,6 +163,7 @@ export function DashboardView({ locale }: DashboardViewProps) {
   // Setup wizard form (for unconfigured servers)
   const [setupLocale, setSetupLocale] = useState<WebLocale>(locale);
   const [setupTz, setSetupTz] = useState<string>('Europe/Paris');
+  const [setupRestoreRole, setSetupRestoreRole] = useState<boolean>(false);
 
   // Config editors (/settings)
   const [customTzInput, setCustomTzInput] = useState<string>('UTC');
@@ -460,7 +466,11 @@ export function DashboardView({ locale }: DashboardViewProps) {
         `/api/dashboard/guilds/${encodeURIComponent(selectedGuildSummary.id)}/setup`,
         {
           method: 'POST',
-          body: JSON.stringify({ locale: setupLocale, timezone: setupTz }),
+          body: JSON.stringify({
+            locale: setupLocale,
+            timezone: setupTz,
+            restoreRole: setupRestoreRole,
+          }),
         }
       );
       const data = (await res.json()) as GuildDetail & { error?: string };
@@ -488,7 +498,12 @@ export function DashboardView({ locale }: DashboardViewProps) {
     }
   };
 
-  const handleUpdateConfig = async (updates: { timezone?: string; locale?: WebLocale }) => {
+  const handleUpdateConfig = async (updates: {
+    timezone?: string;
+    locale?: WebLocale;
+    restoreRole?: boolean;
+    syncRestoreRole?: boolean;
+  }) => {
     if (!detail) return;
     setActionBusy(true);
     setBannerMsg(null);
@@ -514,10 +529,21 @@ export function DashboardView({ locale }: DashboardViewProps) {
             : g
         )
       );
-      setBannerMsg({
-        kind: 'ok',
-        text: isFr ? 'Configuration du bot mise à jour.' : 'Bot configuration updated.',
-      });
+      let okText = isFr ? 'Configuration du bot mise à jour.' : 'Bot configuration updated.';
+      if (updates.restoreRole === true) {
+        okText = isFr
+          ? 'Rôle Logoto Restore activé et permissions synchronisées.'
+          : 'Logoto Restore role enabled and channel permissions synced.';
+      } else if (updates.restoreRole === false) {
+        okText = isFr
+          ? 'Rôle Logoto Restore désactivé et supprimé.'
+          : 'Logoto Restore role disabled and removed.';
+      } else if (updates.syncRestoreRole) {
+        okText = isFr
+          ? 'Permissions de Logoto Restore synchronisées sur tous les salons Logoto.'
+          : 'Logoto Restore permissions synced across all Logoto channels.';
+      }
+      setBannerMsg({ kind: 'ok', text: okText });
     } finally {
       setActionBusy(false);
     }
@@ -897,7 +923,7 @@ export function DashboardView({ locale }: DashboardViewProps) {
 
   const botInviteForGuild = (guildId: string) => {
     const cid = authConfig?.clientId || '1431383390162124920';
-    return `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(cid)}&guild_id=${encodeURIComponent(guildId)}&permissions=536890424&scope=bot%20applications.commands`;
+    return `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(cid)}&guild_id=${encodeURIComponent(guildId)}&permissions=805325880&scope=bot%20applications.commands`;
   };
 
   // Loading state
@@ -1420,6 +1446,30 @@ export function DashboardView({ locale }: DashboardViewProps) {
             </div>
           </div>
 
+          <label className="flex items-start gap-3 rounded-lg bg-[#1e1f22] border border-white/10 p-3.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={setupRestoreRole}
+              disabled={!detail.botCanManageRoles || actionBusy}
+              onChange={(e) => setSetupRestoreRole(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-[#8c935d] cursor-pointer disabled:opacity-50"
+            />
+            <div className="space-y-0.5">
+              <span className="block text-sm font-semibold text-[#F2F3F5]">
+                {isFr ? 'Activer le rôle Logoto Restore' : 'Enable Logoto Restore role'}
+              </span>
+              <span className="block text-xs text-[#b9bbbe]">
+                {detail.botCanManageRoles
+                  ? isFr
+                    ? 'Crée un rôle sans permission serveur, l’ajoute au bot et copie ses accès salons pour retrouver la config après réinvitation.'
+                    : 'Creates a role with no server-wide permissions, assigns it to the bot, and mirrors channel permissions for easy recovery.'
+                  : isFr
+                    ? 'Nécessite la permission Gérer les rôles (ManageRoles) sur ce serveur.'
+                    : 'Requires the Manage Roles (ManageRoles) permission on this server.'}
+              </span>
+            </div>
+          </label>
+
           <button
             type="submit"
             disabled={actionBusy}
@@ -1545,6 +1595,85 @@ export function DashboardView({ locale }: DashboardViewProps) {
                 {copiedTopic ? <Check className="w-4 h-4 text-[#43b581]" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
+          </div>
+
+          {/* Logoto Restore Role */}
+          <div className="rounded-xl bg-[#2b2d31] border border-white/[0.08] p-5 sm:p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2.5">
+                  <Shield className="w-4 h-4 text-[#a3ab72] shrink-0" aria-hidden="true" />
+                  <h3 className="font-display text-base font-bold text-[#F2F3F5]">
+                    {isFr ? 'Rôle de restauration (Logoto Restore)' : 'Restore Role (Logoto Restore)'}
+                  </h3>
+                  <span
+                    className={`text-[11px] font-bold px-2 py-0.5 rounded ${
+                      detail.config.restoreRoleEnabled
+                        ? 'bg-[#43b581]/15 text-[#43b581] border border-[#43b581]/30'
+                        : 'bg-[#1e1f22] text-[#b9bbbe] border border-white/10'
+                    }`}
+                  >
+                    {detail.config.restoreRoleEnabled
+                      ? isFr
+                        ? 'Activé'
+                        : 'Enabled'
+                      : isFr
+                        ? 'Désactivé'
+                        : 'Disabled'}
+                  </span>
+                </div>
+                <p className="text-xs text-[#b9bbbe] leading-relaxed max-w-2xl">
+                  {isFr
+                    ? 'Crée un rôle nommé Logoto Restore sans aucune autorisation serveur, l’ajoute au bot et lui applique exactement les mêmes permissions que Logoto sur tous les salons créés. Si le bot est retiré puis réinvité, il retrouve automatiquement ses salons de configuration.'
+                    : 'Creates a role named Logoto Restore with no server-wide permissions, assigns it to the bot, and mirrors Logoto’s channel permissions across all Logoto channels. If the bot is removed and re-invited, it automatically recovers access.'}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                {detail.config.restoreRoleEnabled ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={actionBusy || !detail.botCanManageRoles}
+                      onClick={() => void handleUpdateConfig({ syncRestoreRole: true })}
+                      className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-[#1e1f22] hover:bg-[#313338] border border-white/15 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-[#a3ab72]" aria-hidden="true" />
+                      <span>{isFr ? 'Synchroniser les salons' : 'Sync channels'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={actionBusy || !detail.botCanManageRoles}
+                      onClick={() => void handleUpdateConfig({ restoreRole: false })}
+                      className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-[#f04747]/15 hover:bg-[#f04747]/25 border border-[#f04747]/40 text-xs font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                    >
+                      <span>{isFr ? 'Désactiver & supprimer' : 'Disable & delete'}</span>
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={actionBusy || !detail.botCanManageRoles}
+                    onClick={() => void handleUpdateConfig({ restoreRole: true })}
+                    className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-xs font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                  >
+                    <Shield className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>{isFr ? 'Activer Logoto Restore' : 'Enable Logoto Restore'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {!detail.botCanManageRoles && (
+              <div className="rounded-lg bg-[#f0b232]/10 border border-[#f0b232]/30 px-3.5 py-2.5 text-xs text-[#f0b232] flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
+                <span>
+                  {isFr
+                    ? 'Permission manquante : accordez Gérer les rôles (ManageRoles) à Logoto pour activer ou gérer ce rôle.'
+                    : 'Missing permission: grant Manage Roles (ManageRoles) to Logoto to enable or manage this role.'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Backup & Restore (.txt) - Uniform button sizes */}

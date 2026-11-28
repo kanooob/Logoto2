@@ -13,6 +13,13 @@ import {
 import { buildSiteUrls, getConfiguredSiteOrigin } from '../../server/siteDomain.js';
 import { normalizeLocale, t } from '../i18n/index.js';
 import {
+  findRestoreRole,
+  getGuildConfig,
+  RESTORE_ROLE_NAME,
+  restoreBotAccessOnJoin,
+  sendLogEmbed,
+} from '../services/guildConfigService.js';
+import {
   botStartedAtUnix,
   startScheduler,
   updateBotPresence,
@@ -90,6 +97,15 @@ export function registerLifecycleEvents(client: Client): void {
     );
     await sendOwnerPanelDM(readyClient);
     startScheduler(readyClient);
+
+    void (async () => {
+      for (const guild of readyClient.guilds.cache.values()) {
+        const restoreRole = findRestoreRole(guild);
+        if (restoreRole && !guild.members.me?.roles.cache.has(restoreRole.id)) {
+          await restoreBotAccessOnJoin(guild);
+        }
+      }
+    })();
   });
 
   client.on(Events.GuildCreate, async (guild) => {
@@ -132,6 +148,25 @@ export function registerLifecycleEvents(client: Client): void {
       await sendGuildLogMessage(guild.client, { embeds: [joinEmbed] });
     } catch (err) {
       console.warn(`[Logoto] Failed to log guildCreate for ${guild.id}:`, err);
+    }
+
+    const restoreOutcome = await restoreBotAccessOnJoin(guild);
+    if (restoreOutcome.restored) {
+      const restoredConfig = await getGuildConfig(guild);
+      if (restoredConfig.logChannel) {
+        const restoredEmbed = new EmbedBuilder()
+          .setColor(PRIMARY_COLOR)
+          .setTitle(t(restoredConfig.locale, 'logRestoredTitle'))
+          .setDescription(
+            t(restoredConfig.locale, 'logRestoredDesc', {
+              roleName: RESTORE_ROLE_NAME,
+              count: restoreOutcome.syncedChannels,
+            })
+          )
+          .setTimestamp();
+        await sendLogEmbed(guild, restoredEmbed);
+        return;
+      }
     }
 
     try {

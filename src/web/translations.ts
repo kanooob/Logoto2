@@ -18,7 +18,7 @@ export const EXTERNAL_LINKS = {
 
 export function buildInviteUrl(clientId = '1431383390162124920'): string {
   const safeId = clientId.trim() || '1431383390162124920';
-  return `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(safeId)}&permissions=536890424&scope=bot%20applications.commands`;
+  return `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(safeId)}&permissions=805325880&scope=bot%20applications.commands`;
 }
 
 export const UI_COPY = {

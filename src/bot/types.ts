@@ -12,6 +12,9 @@ export interface GuildConfig {
   category: CategoryChannel | null;
   logChannel: TextChannel | null;
   lastRunDate?: string;
+  restoreRoleEnabled: boolean;
+  restoreRoleId?: string | null;
+  restoreRoleName?: string | null;
 }
 
 export interface LocalDateParts {

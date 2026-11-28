@@ -86,6 +86,7 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
           PermissionsBitField.Flags.Administrator,
           PermissionsBitField.Flags.ManageGuild,
           PermissionsBitField.Flags.ManageChannels,
+          PermissionsBitField.Flags.ManageRoles,
           PermissionsBitField.Flags.ManageWebhooks,
           PermissionsBitField.Flags.ViewChannel,
           PermissionsBitField.Flags.SendMessages,
@@ -102,6 +103,7 @@ export async function handleAboutCommand(interaction: ChatInputCommandInteractio
       PermissionsBitField.Flags.Administrator |
       PermissionsBitField.Flags.ManageGuild |
       PermissionsBitField.Flags.ManageChannels |
+      PermissionsBitField.Flags.ManageRoles |
       PermissionsBitField.Flags.ManageWebhooks |
       PermissionsBitField.Flags.ViewChannel |
       PermissionsBitField.Flags.SendMessages |

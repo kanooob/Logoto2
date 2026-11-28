@@ -7,6 +7,7 @@ import {
   type EmbedBuilder,
   type Guild,
   type OverwriteResolvable,
+  type Role,
   type TextChannel,
 } from 'discord.js';
 import { normalizeLocale } from '../i18n/index.js';
@@ -14,6 +15,7 @@ import type { GuildConfig, LocalDateParts, SupportedLocale } from '../types.js';
 
 export const CATEGORY_NAME = 'Logoto';
 export const LOG_CHANNEL_NAME = 'log-logoto';
+export const RESTORE_ROLE_NAME = 'Logoto Restore';
 export const DEFAULT_TIMEZONE = 'UTC';
 export const DEFAULT_LOCALE: SupportedLocale = 'en';
 
@@ -26,6 +28,7 @@ interface VerifiedGuildState {
   timezone: string;
   locale: SupportedLocale;
   lastRunDate?: string;
+  restoreRole?: boolean;
   signed: boolean;
 }
 
@@ -39,11 +42,13 @@ function computeTopicSignature(
   guildId: string,
   timezone: string,
   locale: SupportedLocale,
-  lastRunDate?: string
+  lastRunDate?: string,
+  restoreRole?: boolean
 ): string | null {
   const secret = getSigningSecret();
   if (!secret) return null;
-  const payload = `${guildId}|${timezone}|${locale}|${lastRunDate ?? ''}`;
+  const basePayload = `${guildId}|${timezone}|${locale}|${lastRunDate ?? ''}`;
+  const payload = restoreRole ? `${basePayload}|restore=1` : basePayload;
   return createHmac('sha256', secret).update(payload).digest('base64url').slice(0, 16);
 }
 
@@ -52,9 +57,10 @@ function verifyTopicSignature(
   timezone: string,
   locale: SupportedLocale,
   lastRunDate: string | undefined,
+  restoreRole: boolean,
   sig: string
 ): boolean {
-  const expected = computeTopicSignature(guildId, timezone, locale, lastRunDate);
+  const expected = computeTopicSignature(guildId, timezone, locale, lastRunDate, restoreRole);
   if (!expected) return false;
   const actualBuf = Buffer.from(sig, 'utf8');
   const expectedBuf = Buffer.from(expected, 'utf8');
@@ -115,7 +121,7 @@ export function isValidTimeZone(tz: string): boolean {
 export function formatConfigTopic(
   timezone: string,
   locale: string,
-  options?: { lastRunDate?: string; guildId?: string }
+  options?: { lastRunDate?: string; restoreRole?: boolean; guildId?: string }
 ): string {
   const safeTz = normalizeTimeZone(timezone) ?? DEFAULT_TIMEZONE;
   const safeLocale = normalizeLocale(locale);
@@ -123,13 +129,17 @@ export function formatConfigTopic(
     options?.lastRunDate && DATE_KEY_REGEX.test(options.lastRunDate)
       ? options.lastRunDate
       : undefined;
+  const safeRestore = Boolean(options?.restoreRole);
 
   const parts = [`tz=${safeTz}`, `lang=${safeLocale}`];
   if (safeLast) {
     parts.push(`last=${safeLast}`);
   }
+  if (safeRestore) {
+    parts.push('restore=1');
+  }
   if (options?.guildId) {
-    const sig = computeTopicSignature(options.guildId, safeTz, safeLocale, safeLast);
+    const sig = computeTopicSignature(options.guildId, safeTz, safeLocale, safeLast, safeRestore);
     if (sig) {
       parts.push(`sig=${sig}`);
     }
@@ -144,16 +154,18 @@ export function parseConfigFromTopic(
   timezone: string;
   locale: SupportedLocale;
   lastRunDate?: string;
+  restoreRole: boolean;
   hasSignature: boolean;
   hasValidSignature: boolean;
 } {
   let timezone = DEFAULT_TIMEZONE;
   let locale: SupportedLocale = DEFAULT_LOCALE;
   let lastRunDate: string | undefined;
+  let restoreRole = false;
   let sig: string | undefined;
 
   if (!topic || typeof topic !== 'string') {
-    return { timezone, locale, hasSignature: false, hasValidSignature: false };
+    return { timezone, locale, restoreRole: false, hasSignature: false, hasValidSignature: false };
   }
 
   const segments = topic.split(';');
@@ -172,6 +184,8 @@ export function parseConfigFromTopic(
       locale = normalizeLocale(val);
     } else if (key === 'last' && DATE_KEY_REGEX.test(val)) {
       lastRunDate = val;
+    } else if (key === 'restore') {
+      restoreRole = val === '1' || val.toLowerCase() === 'true';
     } else if (key === 'sig' && val) {
       sig = val;
     }
@@ -179,10 +193,10 @@ export function parseConfigFromTopic(
 
   const hasSignature = Boolean(sig);
   const hasValidSignature = Boolean(
-    guildId && sig && verifyTopicSignature(guildId, timezone, locale, lastRunDate, sig)
+    guildId && sig && verifyTopicSignature(guildId, timezone, locale, lastRunDate, restoreRole, sig)
   );
 
-  return { timezone, locale, lastRunDate, hasSignature, hasValidSignature };
+  return { timezone, locale, lastRunDate, restoreRole, hasSignature, hasValidSignature };
 }
 
 function hasEveryoneDeniedView(channel: CategoryChannel | TextChannel): boolean {
@@ -278,6 +292,19 @@ function getBotAllowPermissions(guild: Guild): bigint[] {
   return allow;
 }
 
+function getBotPermsPatch(guild: Guild): Record<string, boolean> {
+  return {
+    ViewChannel: true,
+    SendMessages: true,
+    ManageChannels: true,
+    EmbedLinks: true,
+    AttachFiles: true,
+    ...(guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)
+      ? { ManageWebhooks: true }
+      : {}),
+  };
+}
+
 function findBotManagedRoleId(guild: Guild, botId?: string): string | null {
   const role =
     (botId ? guild.roles.botRoleFor(botId) : null) ??
@@ -285,6 +312,26 @@ function findBotManagedRoleId(guild: Guild, botId?: string): string | null {
     null;
   if (!role || role.id === guild.roles.everyone.id) return null;
   return role.id;
+}
+
+export function findRestoreRole(guild: Guild): Role | null {
+  const target = RESTORE_ROLE_NAME.toLowerCase();
+  const matches = Array.from(guild.roles.cache.values()).filter(
+    (role) => !role.managed && role.id !== guild.roles.everyone.id && role.name.toLowerCase() === target
+  );
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0];
+
+  const me = guild.members.me;
+  const assigned = me ? matches.find((r) => me.roles.cache.has(r.id)) : undefined;
+  if (assigned) return assigned;
+
+  matches.sort((a, b) => compareSnowflakesOldestFirst(a, b));
+  return matches[0];
+}
+
+export function canBotManageRoles(guild: Guild): boolean {
+  return Boolean(guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageRoles));
 }
 
 export function buildPrivateOverwrites(guild: Guild): OverwriteResolvable[] {
@@ -320,6 +367,15 @@ export function buildPrivateOverwrites(guild: Guild): OverwriteResolvable[] {
     });
   }
 
+  const restoreRole = findRestoreRole(guild);
+  if (restoreRole) {
+    overwrites.push({
+      id: restoreRole.id,
+      type: OverwriteType.Role,
+      allow,
+    });
+  }
+
   return overwrites;
 }
 
@@ -337,19 +393,16 @@ export async function ensureLogotoCategory(guild: Guild): Promise<CategoryChanne
     }
     const botId = guild.client.user?.id;
     const botRoleId = findBotManagedRoleId(guild, botId);
+    const botPermsPatch = getBotPermsPatch(guild);
     if (botRoleId && !existing.permissionOverwrites.cache.has(botRoleId)) {
-      await existing.permissionOverwrites
-        .edit(botRoleId, {
-          ViewChannel: true,
-          SendMessages: true,
-          ManageChannels: true,
-          EmbedLinks: true,
-          AttachFiles: true,
-          ...(guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)
-            ? { ManageWebhooks: true }
-            : {}),
-        })
-        .catch(() => {});
+      await existing.permissionOverwrites.edit(botRoleId, botPermsPatch).catch(() => {});
+    }
+    if (botId && !existing.permissionOverwrites.cache.has(botId)) {
+      await existing.permissionOverwrites.edit(botId, botPermsPatch).catch(() => {});
+    }
+    const restoreRole = findRestoreRole(guild);
+    if (restoreRole && !existing.permissionOverwrites.cache.has(restoreRole.id)) {
+      await existing.permissionOverwrites.edit(restoreRole.id, botPermsPatch).catch(() => {});
     }
     return existing;
   }
@@ -384,31 +437,32 @@ export async function ensureLogChannel(
     }
     const botId = guild.client.user?.id;
     const botRoleId = findBotManagedRoleId(guild, botId);
-    const botPermsPatch = {
-      ViewChannel: true,
-      SendMessages: true,
-      ManageChannels: true,
-      EmbedLinks: true,
-      AttachFiles: true,
-      ...(guild.members.me?.permissions.has(PermissionsBitField.Flags.ManageWebhooks)
-        ? { ManageWebhooks: true }
-        : {}),
-    };
+    const botPermsPatch = getBotPermsPatch(guild);
     if (botRoleId) {
       await existing.permissionOverwrites.edit(botRoleId, botPermsPatch).catch(() => {});
     }
     if (botId) {
       await existing.permissionOverwrites.edit(botId, botPermsPatch).catch(() => {});
     }
+    const restoreRole = findRestoreRole(guild);
+    if (restoreRole) {
+      await existing.permissionOverwrites.edit(restoreRole.id, botPermsPatch).catch(() => {});
+    }
     return { category, logChannel: existing, created: false };
   }
+
+  const restoreRole = findRestoreRole(guild);
+  const restoreActive = Boolean(restoreRole && guild.members.me?.roles.cache.has(restoreRole.id));
 
   const logChannel = await guild.channels.create({
     name: LOG_CHANNEL_NAME,
     type: ChannelType.GuildText,
     parent: category.id,
     permissionOverwrites: buildPrivateOverwrites(guild),
-    topic: formatConfigTopic(DEFAULT_TIMEZONE, DEFAULT_LOCALE, { guildId: guild.id }),
+    topic: formatConfigTopic(DEFAULT_TIMEZONE, DEFAULT_LOCALE, {
+      restoreRole: restoreActive,
+      guildId: guild.id,
+    }),
     reason: 'Logoto configuration and logs channel',
   });
 
@@ -417,15 +471,174 @@ export async function ensureLogChannel(
     logChannelId: logChannel.id,
     timezone: DEFAULT_TIMEZONE,
     locale: DEFAULT_LOCALE,
+    restoreRole: restoreActive,
     signed: Boolean(getSigningSecret()),
   });
 
   return { category, logChannel, created: true };
 }
 
+export async function syncRestoreRoleOverwrites(guild: Guild, role: Role): Promise<number> {
+  const category = findLogotoCategory(guild);
+  const logChannel = findLogChannel(guild, category);
+  const botId = guild.client.user?.id;
+  const botRoleId = findBotManagedRoleId(guild, botId);
+  const botPermsPatch = getBotPermsPatch(guild);
+
+  const channelsToSync = new Map<string, CategoryChannel | TextChannel>();
+  if (category) {
+    channelsToSync.set(category.id, category);
+  }
+  if (logChannel) {
+    channelsToSync.set(logChannel.id, logChannel);
+  }
+  if (category) {
+    for (const ch of guild.channels.cache.values()) {
+      if (ch.type === ChannelType.GuildText && ch.parentId === category.id) {
+        channelsToSync.set(ch.id, ch);
+      }
+    }
+  }
+
+  let synced = 0;
+  for (const ch of channelsToSync.values()) {
+    try {
+      await ch.permissionOverwrites.edit(role.id, botPermsPatch);
+      if (botRoleId) {
+        await ch.permissionOverwrites.edit(botRoleId, botPermsPatch).catch(() => {});
+      }
+      if (botId) {
+        await ch.permissionOverwrites.edit(botId, botPermsPatch).catch(() => {});
+      }
+      synced += 1;
+    } catch (err) {
+      console.warn(`[Logoto] Failed to sync restore role overwrites on ${guild.id}/${ch.id}:`, err);
+    }
+  }
+  return synced;
+}
+
+export type RestoreRoleActionResult =
+  | { ok: true; role: Role; syncedChannels: number; createdRole: boolean }
+  | { ok: false; reason: 'missing_member' | 'missing_manage_roles' | 'role_hierarchy' };
+
+export async function enableRestoreRole(guild: Guild): Promise<RestoreRoleActionResult> {
+  const me = guild.members.me ?? (await guild.members.fetchMe().catch(() => null));
+  if (!me) {
+    return { ok: false, reason: 'missing_member' };
+  }
+  if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+    return { ok: false, reason: 'missing_manage_roles' };
+  }
+
+  await guild.roles.fetch().catch(() => null);
+  let role = findRestoreRole(guild);
+  let createdRole = false;
+
+  if (!role) {
+    role = await guild.roles.create({
+      name: RESTORE_ROLE_NAME,
+      permissions: [],
+      hoist: false,
+      mentionable: false,
+      reason: 'Logoto Restore role (no server-wide permissions)',
+    });
+    createdRole = true;
+  } else if (role.position >= me.roles.highest.position) {
+    return { ok: false, reason: 'role_hierarchy' };
+  }
+
+  if (!me.roles.cache.has(role.id)) {
+    await me.roles.add(role, 'Logoto Restore role assignment');
+  }
+
+  const syncedChannels = await syncRestoreRoleOverwrites(guild, role);
+  if (findLogChannel(guild)) {
+    await setGuildConfig(guild, { restoreRole: true });
+  }
+
+  return { ok: true, role, syncedChannels, createdRole };
+}
+
+export type DisableRestoreRoleResult =
+  | { ok: true; deletedRole: boolean }
+  | { ok: false; reason: 'missing_member' | 'missing_manage_roles' | 'role_hierarchy' };
+
+export async function disableRestoreRole(guild: Guild): Promise<DisableRestoreRoleResult> {
+  const me = guild.members.me ?? (await guild.members.fetchMe().catch(() => null));
+  if (!me) {
+    return { ok: false, reason: 'missing_member' };
+  }
+
+  await guild.roles.fetch().catch(() => null);
+  const role = findRestoreRole(guild);
+  let deletedRole = false;
+
+  if (role) {
+    if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+      return { ok: false, reason: 'missing_manage_roles' };
+    }
+    if (role.position >= me.roles.highest.position) {
+      return { ok: false, reason: 'role_hierarchy' };
+    }
+    await role.delete('Logoto Restore disabled');
+    deletedRole = true;
+  }
+
+  if (findLogChannel(guild)) {
+    await setGuildConfig(guild, { restoreRole: false });
+  }
+
+  return { ok: true, deletedRole };
+}
+
+export async function restoreBotAccessOnJoin(
+  guild: Guild
+): Promise<{ restored: boolean; syncedChannels: number }> {
+  try {
+    await guild.roles.fetch().catch(() => null);
+    const role = findRestoreRole(guild);
+    if (!role) {
+      return { restored: false, syncedChannels: 0 };
+    }
+
+    const me = guild.members.me ?? (await guild.members.fetchMe().catch(() => null));
+    if (
+      !me ||
+      !me.permissions.has(PermissionsBitField.Flags.ManageRoles) ||
+      role.position >= me.roles.highest.position
+    ) {
+      return { restored: false, syncedChannels: 0 };
+    }
+
+    let roleAdded = false;
+    if (!me.roles.cache.has(role.id)) {
+      await me.roles.add(role, 'Logoto Restore: regaining access to configuration channels');
+      roleAdded = true;
+    }
+
+    await guild.channels.fetch().catch(() => null);
+    const syncedChannels = await syncRestoreRoleOverwrites(guild, role);
+    const logChannel = findLogChannel(guild);
+    if (logChannel) {
+      const parsed = parseConfigFromTopic(logChannel.topic, guild.id);
+      if (!parsed.restoreRole) {
+        await setGuildConfig(guild, { restoreRole: true }).catch(() => {});
+      }
+    }
+
+    return { restored: roleAdded, syncedChannels };
+  } catch (err) {
+    console.warn(`[Logoto] Failed to restore access via Logoto Restore in guild ${guild.id}:`, err);
+    return { restored: false, syncedChannels: 0 };
+  }
+}
+
 export async function getGuildConfig(guild: Guild): Promise<GuildConfig> {
   const category = findLogotoCategory(guild);
   const logChannel = findLogChannel(guild, category);
+  const restoreRole = findRestoreRole(guild);
+  const botHasRestoreRole = Boolean(restoreRole && guild.members.me?.roles.cache.has(restoreRole.id));
 
   if (!logChannel) {
     return {
@@ -433,6 +646,9 @@ export async function getGuildConfig(guild: Guild): Promise<GuildConfig> {
       locale: DEFAULT_LOCALE,
       category,
       logChannel: null,
+      restoreRoleEnabled: botHasRestoreRole,
+      restoreRoleId: restoreRole?.id ?? null,
+      restoreRoleName: restoreRole?.name ?? null,
     };
   }
 
@@ -454,8 +670,13 @@ export async function getGuildConfig(guild: Guild): Promise<GuildConfig> {
       lastRunDate: cached?.lastRunDate,
       category,
       logChannel,
+      restoreRoleEnabled: Boolean(restoreRole && (botHasRestoreRole || cached?.restoreRole)),
+      restoreRoleId: restoreRole?.id ?? null,
+      restoreRoleName: restoreRole?.name ?? null,
     };
   }
+
+  const restoreRoleEnabled = Boolean(restoreRole && (botHasRestoreRole || parsed.restoreRole));
 
   verifiedGuildCache.set(guild.id, {
     categoryId: category?.id ?? cached?.categoryId,
@@ -463,6 +684,7 @@ export async function getGuildConfig(guild: Guild): Promise<GuildConfig> {
     timezone: parsed.timezone,
     locale: parsed.locale,
     lastRunDate: parsed.lastRunDate,
+    restoreRole: parsed.restoreRole || botHasRestoreRole,
     signed: parsed.hasValidSignature || Boolean(cached?.signed),
   });
 
@@ -472,12 +694,15 @@ export async function getGuildConfig(guild: Guild): Promise<GuildConfig> {
     lastRunDate: parsed.lastRunDate,
     category,
     logChannel,
+    restoreRoleEnabled,
+    restoreRoleId: restoreRole?.id ?? null,
+    restoreRoleName: restoreRole?.name ?? null,
   };
 }
 
 export async function setGuildConfig(
   guild: Guild,
-  updates: { timezone?: string; locale?: string; lastRunDate?: string }
+  updates: { timezone?: string; locale?: string; lastRunDate?: string; restoreRole?: boolean }
 ): Promise<GuildConfig> {
   const { category, logChannel } = await ensureLogChannel(guild);
   const parsed = parseConfigFromTopic(logChannel.topic, guild.id);
@@ -491,6 +716,7 @@ export async function setGuildConfig(
           timezone: cached?.timezone ?? DEFAULT_TIMEZONE,
           locale: cached?.locale ?? DEFAULT_LOCALE,
           lastRunDate: cached?.lastRunDate,
+          restoreRole: cached?.restoreRole ?? false,
         }
       : parsed;
 
@@ -505,8 +731,13 @@ export async function setGuildConfig(
   const nextLastRunDate =
     updates.lastRunDate !== undefined ? updates.lastRunDate : base.lastRunDate;
 
+  const restoreRoleObj = findRestoreRole(guild);
+  const nextRestoreRole =
+    updates.restoreRole !== undefined ? updates.restoreRole : base.restoreRole;
+
   const topic = formatConfigTopic(nextTimezone, nextLocale, {
     lastRunDate: nextLastRunDate,
+    restoreRole: nextRestoreRole,
     guildId: guild.id,
   });
 
@@ -523,8 +754,13 @@ export async function setGuildConfig(
     timezone: nextTimezone,
     locale: nextLocale,
     lastRunDate: nextLastRunDate,
+    restoreRole: nextRestoreRole,
     signed: secretConfigured,
   });
+
+  const botHasRestoreRole = Boolean(
+    restoreRoleObj && guild.members.me?.roles.cache.has(restoreRoleObj.id)
+  );
 
   return {
     timezone: nextTimezone,
@@ -532,6 +768,9 @@ export async function setGuildConfig(
     lastRunDate: nextLastRunDate,
     category,
     logChannel,
+    restoreRoleEnabled: Boolean(restoreRoleObj && (botHasRestoreRole || nextRestoreRole)),
+    restoreRoleId: restoreRoleObj?.id ?? null,
+    restoreRoleName: restoreRoleObj?.name ?? null,
   };
 }
 
@@ -546,6 +785,7 @@ export async function markGuildLastRunDate(
   try {
     const topic = formatConfigTopic(config.timezone, config.locale, {
       lastRunDate: dateKey,
+      restoreRole: config.restoreRoleEnabled,
       guildId: guild.id,
     });
     await config.logChannel.setTopic(topic, 'Logoto daily schedule checkpoint');
@@ -555,6 +795,7 @@ export async function markGuildLastRunDate(
       timezone: config.timezone,
       locale: config.locale,
       lastRunDate: dateKey,
+      restoreRole: config.restoreRoleEnabled,
       signed: Boolean(getSigningSecret()),
     });
   } catch (err) {
