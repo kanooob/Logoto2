@@ -498,6 +498,7 @@ export async function syncRestoreRoleOverwrites(guild: Guild, role: Role): Promi
   const logChannel = findLogChannel(guild, category);
   const botId = guild.client.user?.id;
   const botRoleId = findBotManagedRoleId(guild, botId);
+  const botAllowFlags = getBotAllowPermissions(guild);
   const botPermsPatch = getBotPermsPatch(guild);
 
   const channelsToSync = new Map<string, CategoryChannel | TextChannel>();
@@ -515,21 +516,52 @@ export async function syncRestoreRoleOverwrites(guild: Guild, role: Role): Promi
     }
   }
 
+  const channelList = Array.from(channelsToSync.values());
+  const BATCH_SIZE = 4;
   let synced = 0;
-  for (const ch of channelsToSync.values()) {
-    try {
-      await ch.permissionOverwrites.edit(role.id, botPermsPatch);
-      if (botRoleId) {
-        await ch.permissionOverwrites.edit(botRoleId, botPermsPatch).catch(() => {});
-      }
-      if (botId) {
-        await ch.permissionOverwrites.edit(botId, botPermsPatch).catch(() => {});
-      }
-      synced += 1;
-    } catch (err) {
-      console.warn(`[Logoto] Failed to sync restore role overwrites on ${guild.id}/${ch.id}:`, err);
+
+  for (let i = 0; i < channelList.length; i += BATCH_SIZE) {
+    const batch = channelList.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (ch): Promise<boolean> => {
+        const needsRestore = needsBotOverwriteUpdate(ch, role.id, botAllowFlags);
+        const needsBotRole = Boolean(
+          botRoleId && needsBotOverwriteUpdate(ch, botRoleId, botAllowFlags)
+        );
+        const needsBotId = Boolean(botId && needsBotOverwriteUpdate(ch, botId, botAllowFlags));
+
+        if (!needsRestore && !needsBotRole && !needsBotId) {
+          return true;
+        }
+
+        try {
+          const ops: Promise<unknown>[] = [];
+          if (needsRestore) {
+            ops.push(ch.permissionOverwrites.edit(role.id, botPermsPatch));
+          }
+          if (needsBotRole && botRoleId) {
+            ops.push(ch.permissionOverwrites.edit(botRoleId, botPermsPatch).catch(() => {}));
+          }
+          if (needsBotId && botId) {
+            ops.push(ch.permissionOverwrites.edit(botId, botPermsPatch).catch(() => {}));
+          }
+          await Promise.all(ops);
+          return true;
+        } catch (err) {
+          console.warn(
+            `[Logoto] Failed to sync restore role overwrites on ${guild.id}/${ch.id}:`,
+            err
+          );
+          return !needsRestore;
+        }
+      })
+    );
+
+    for (const ok of results) {
+      if (ok) synced += 1;
     }
   }
+
   return synced;
 }
 
@@ -537,8 +569,21 @@ export type RestoreRoleActionResult =
   | { ok: true; role: Role; syncedChannels: number; createdRole: boolean }
   | { ok: false; reason: 'missing_member' | 'missing_manage_roles' | 'role_hierarchy' };
 
-export async function enableRestoreRole(guild: Guild): Promise<RestoreRoleActionResult> {
-  const me = (await guild.members.fetchMe().catch(() => null)) ?? guild.members.me;
+export async function enableRestoreRole(
+  guild: Guild,
+  options?: { skipFetch?: boolean }
+): Promise<RestoreRoleActionResult> {
+  let me = guild.members.me;
+  if (!options?.skipFetch) {
+    const [fetchedMe] = await Promise.all([
+      guild.members.fetchMe().catch(() => null),
+      guild.roles.fetch().catch(() => null),
+    ]);
+    me = fetchedMe ?? guild.members.me;
+  } else if (!me) {
+    me = await guild.members.fetchMe().catch(() => null);
+  }
+
   if (!me) {
     return { ok: false, reason: 'missing_member' };
   }
@@ -546,7 +591,6 @@ export async function enableRestoreRole(guild: Guild): Promise<RestoreRoleAction
     return { ok: false, reason: 'missing_manage_roles' };
   }
 
-  await guild.roles.fetch().catch(() => null);
   let role = findRestoreRole(guild);
   let createdRole = false;
 
@@ -563,14 +607,22 @@ export async function enableRestoreRole(guild: Guild): Promise<RestoreRoleAction
     return { ok: false, reason: 'role_hierarchy' };
   }
 
-  if (!me.roles.cache.has(role.id)) {
+  const hadRole = me.roles.cache.has(role.id);
+  if (!hadRole) {
     await me.roles.add(role, 'Logoto Restore role assignment');
+    // Re-fetch channels once so any previously private Logoto channels unlocked by this role become visible
     await guild.channels.fetch().catch(() => null);
   }
 
   const syncedChannels = await syncRestoreRoleOverwrites(guild, role);
-  if (findLogChannel(guild)) {
-    await setGuildConfig(guild, { restoreRole: true });
+  const logChannel = findLogChannel(guild);
+  if (logChannel) {
+    const parsed = parseConfigFromTopic(logChannel.topic, guild.id);
+    if (!parsed.restoreRole) {
+      await setGuildConfig(guild, { restoreRole: true }).catch((err) => {
+        console.warn(`[Logoto] Could not update restore flag in ${guild.id}/${logChannel.id}:`, err);
+      });
+    }
   }
 
   return { ok: true, role, syncedChannels, createdRole };
@@ -580,13 +632,25 @@ export type DisableRestoreRoleResult =
   | { ok: true; deletedRole: boolean }
   | { ok: false; reason: 'missing_member' | 'missing_manage_roles' | 'role_hierarchy' };
 
-export async function disableRestoreRole(guild: Guild): Promise<DisableRestoreRoleResult> {
-  const me = (await guild.members.fetchMe().catch(() => null)) ?? guild.members.me;
+export async function disableRestoreRole(
+  guild: Guild,
+  options?: { skipFetch?: boolean }
+): Promise<DisableRestoreRoleResult> {
+  let me = guild.members.me;
+  if (!options?.skipFetch) {
+    const [fetchedMe] = await Promise.all([
+      guild.members.fetchMe().catch(() => null),
+      guild.roles.fetch().catch(() => null),
+    ]);
+    me = fetchedMe ?? guild.members.me;
+  } else if (!me) {
+    me = await guild.members.fetchMe().catch(() => null);
+  }
+
   if (!me) {
     return { ok: false, reason: 'missing_member' };
   }
 
-  await guild.roles.fetch().catch(() => null);
   const role = findRestoreRole(guild);
   let deletedRole = false;
 
@@ -601,8 +665,14 @@ export async function disableRestoreRole(guild: Guild): Promise<DisableRestoreRo
     deletedRole = true;
   }
 
-  if (findLogChannel(guild)) {
-    await setGuildConfig(guild, { restoreRole: false });
+  const logChannel = findLogChannel(guild);
+  if (logChannel) {
+    const parsed = parseConfigFromTopic(logChannel.topic, guild.id);
+    if (parsed.restoreRole) {
+      await setGuildConfig(guild, { restoreRole: false }).catch((err) => {
+        console.warn(`[Logoto] Could not clear restore flag in ${guild.id}/${logChannel.id}:`, err);
+      });
+    }
   }
 
   return { ok: true, deletedRole };
@@ -757,11 +827,13 @@ export async function setGuildConfig(
     guildId: guild.id,
   });
 
-  try {
-    await logChannel.setTopic(topic, 'Logoto configuration update');
-  } catch (err) {
-    console.error(`[Logoto] Failed to set topic on ${guild.id}/${logChannel.id}:`, err);
-    throw err;
+  if (logChannel.topic !== topic) {
+    try {
+      await logChannel.setTopic(topic, 'Logoto configuration update');
+    } catch (err) {
+      console.error(`[Logoto] Failed to set topic on ${guild.id}/${logChannel.id}:`, err);
+      throw err;
+    }
   }
 
   verifiedGuildCache.set(guild.id, {

@@ -642,12 +642,21 @@ export async function handleSettingsCommand(interaction: ChatInputCommandInterac
     return;
   }
 
-  const botPerms = await checkBotGuildPermissions(interaction.guild, locale);
+  let botPerms = await checkBotGuildPermissions(interaction.guild, locale);
   if (!botPerms.ok) {
-    await interaction.guild.members.fetchMe().catch(() => null);
-    await interaction.guild.roles.fetch().catch(() => null);
+    await Promise.all([
+      interaction.guild.members.fetchMe().catch(() => null),
+      interaction.guild.roles.fetch().catch(() => null),
+      interaction.guild.channels.fetch().catch(() => null),
+    ]);
+    botPerms = await checkBotGuildPermissions(interaction.guild, locale);
+  }
+
+  if (!botPerms.ok) {
     const restoreRole = findRestoreRole(interaction.guild);
-    const botHasRole = Boolean(restoreRole && interaction.guild.members.me?.roles.cache.has(restoreRole.id));
+    const botHasRole = Boolean(
+      restoreRole && interaction.guild.members.me?.roles.cache.has(restoreRole.id)
+    );
     const components: Array<ActionRowBuilder<ButtonBuilder>> = [];
     if (restoreRole && !botHasRole && canBotManageRoles(interaction.guild)) {
       components.push(
@@ -710,10 +719,16 @@ export async function handleSettingsInteraction(
       return true;
     }
 
-    await guild.channels.fetch().catch(() => null);
     const refreshedPerms = await checkBotGuildPermissions(guild, locale);
     if (!refreshedPerms.ok) {
       await interaction.editReply({ embeds: [refreshedPerms.embed], components: [] });
+      await interaction.followUp({
+        content: t(locale, 'restoreRecoverPartialMsg', {
+          role: `<@&${result.role.id}>`,
+          count: result.syncedChannels,
+        }),
+        flags: MessageFlags.Ephemeral,
+      });
       return true;
     }
 
@@ -810,7 +825,10 @@ export async function handleSettingsInteraction(
     if (cid === 'settings:restore_sync') {
       await interaction.deferUpdate();
       const existingRole = findRestoreRole(guild);
-      if (!existingRole) {
+      const botHasRole = Boolean(
+        existingRole && guild.members.me?.roles.cache.has(existingRole.id)
+      );
+      if (!existingRole || !botHasRole) {
         const result = await enableRestoreRole(guild);
         if (!result.ok) {
           const msgKey =

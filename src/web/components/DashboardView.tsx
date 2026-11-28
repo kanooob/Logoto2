@@ -107,6 +107,11 @@ interface GuildDetail {
     configUpdated: number;
     skipped: number;
   };
+  restoreSummary?: {
+    action: 'enabled' | 'disabled' | 'synced';
+    syncedChannels: number;
+    createdRole: boolean;
+  };
 }
 
 type ServerWorkspaceTab = 'events' | 'bot';
@@ -158,6 +163,9 @@ export function DashboardView({ locale }: DashboardViewProps) {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<GuildDetail | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [pendingAction, setPendingAction] = useState<
+    'restore_enable' | 'restore_disable' | 'restore_sync' | null
+  >(null);
   const [bannerMsg, setBannerMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
   // Setup wizard form (for unconfigured servers)
@@ -504,9 +512,9 @@ export function DashboardView({ locale }: DashboardViewProps) {
           }),
         }
       );
-      const data = (await res.json()) as GuildDetail & { error?: string };
-      if (!res.ok) {
-        setBannerMsg({ kind: 'err', text: data.error || 'Setup failed' });
+      const data = (await res.json().catch(() => null)) as (GuildDetail & { error?: string }) | null;
+      if (!res.ok || !data) {
+        setBannerMsg({ kind: 'err', text: data?.error || 'Setup failed' });
         return;
       }
       setDetail(data);
@@ -524,6 +532,13 @@ export function DashboardView({ locale }: DashboardViewProps) {
           ? 'Logoto initialisé sur Discord (#log-logoto créé).'
           : 'Logoto initialized on Discord (#log-logoto created).',
       });
+    } catch {
+      setBannerMsg({
+        kind: 'err',
+        text: isFr
+          ? 'Erreur réseau ou délai dépassé lors de l’initialisation sur Discord. Réessayez.'
+          : 'Network error or timeout while initializing on Discord. Please try again.',
+      });
     } finally {
       setActionBusy(false);
     }
@@ -537,6 +552,15 @@ export function DashboardView({ locale }: DashboardViewProps) {
   }) => {
     if (!detail) return;
     setActionBusy(true);
+    setPendingAction(
+      updates.restoreRole === true
+        ? 'restore_enable'
+        : updates.restoreRole === false
+          ? 'restore_disable'
+          : updates.syncRestoreRole
+            ? 'restore_sync'
+            : null
+    );
     setBannerMsg(null);
     try {
       const res = await apiFetch(
@@ -546,9 +570,14 @@ export function DashboardView({ locale }: DashboardViewProps) {
           body: JSON.stringify(updates),
         }
       );
-      const data = (await res.json()) as GuildDetail & { error?: string };
-      if (!res.ok) {
-        setBannerMsg({ kind: 'err', text: data.error || 'Update failed' });
+      const data = (await res.json().catch(() => null)) as (GuildDetail & { error?: string }) | null;
+      if (!res.ok || !data) {
+        setBannerMsg({
+          kind: 'err',
+          text:
+            data?.error ||
+            (isFr ? 'Échec de la mise à jour sur Discord.' : 'Discord configuration update failed.'),
+        });
         return;
       }
       setDetail(data);
@@ -565,23 +594,70 @@ export function DashboardView({ locale }: DashboardViewProps) {
             : g
         )
       );
-      let okText = isFr ? 'Configuration du bot mise à jour.' : 'Bot configuration updated.';
+      const syncedCount = data.restoreSummary?.syncedChannels ?? 0;
+
       if (updates.restoreRole === true) {
-        okText = isFr
-          ? 'Rôle Logoto Restore activé et permissions synchronisées.'
-          : 'Logoto Restore role enabled and channel permissions synced.';
-      } else if (updates.restoreRole === false) {
-        okText = isFr
-          ? 'Rôle Logoto Restore désactivé et supprimé.'
-          : 'Logoto Restore role disabled and removed.';
-      } else if (updates.syncRestoreRole) {
-        okText = isFr
-          ? 'Permissions de Logoto Restore synchronisées sur tous les salons Logoto.'
-          : 'Logoto Restore permissions synced across all Logoto channels.';
+        if (!data.botPermissionsOk) {
+          setBannerMsg({
+            kind: 'err',
+            text: isFr
+              ? 'Rôle Logoto Restore attribué au bot, mais il manque encore des permissions sur Discord. Si Logoto Restore n’était pas activé avant de retirer le bot, ses anciens salons privés ne lui donnent pas encore accès : accordez-les manuellement dans Discord puis cliquez sur Actualiser.'
+              : 'Logoto Restore role was assigned to the bot, but permissions are still missing on Discord. If Logoto Restore was not enabled before removing the bot, old private channels will not grant access yet—grant them in Discord then click Refresh.',
+          });
+          return;
+        }
+        if (!data.configured) {
+          setBannerMsg({
+            kind: 'err',
+            text: isFr
+              ? 'Rôle Logoto Restore attribué au bot, mais aucun salon #log-logoto existant n’a été trouvé. Si ce rôle n’avait pas été activé avant le retrait du bot, donnez au bot l’accès à votre ancienne catégorie Logoto dans Discord puis actualisez, ou lancez une initialisation ci-dessous.'
+              : 'Logoto Restore role was assigned to the bot, but no existing #log-logoto channel was found. If this role was not enabled before removing the bot, grant the bot access to your old Logoto category in Discord then refresh, or initialize below.',
+          });
+          return;
+        }
+        setBannerMsg({
+          kind: 'ok',
+          text: isFr
+            ? `Rôle Logoto Restore activé et synchronisé sur ${syncedCount} salon(s) Logoto.`
+            : `Logoto Restore role enabled and synced across ${syncedCount} Logoto channel(s).`,
+        });
+        return;
       }
-      setBannerMsg({ kind: 'ok', text: okText });
+
+      if (updates.restoreRole === false) {
+        setBannerMsg({
+          kind: 'ok',
+          text: isFr
+            ? 'Rôle Logoto Restore désactivé et supprimé du serveur.'
+            : 'Logoto Restore role disabled and removed from the server.',
+        });
+        return;
+      }
+
+      if (updates.syncRestoreRole) {
+        setBannerMsg({
+          kind: 'ok',
+          text: isFr
+            ? `Permissions de Logoto Restore synchronisées sur ${syncedCount} salon(s) Logoto.`
+            : `Logoto Restore permissions synced across ${syncedCount} Logoto channel(s).`,
+        });
+        return;
+      }
+
+      setBannerMsg({
+        kind: 'ok',
+        text: isFr ? 'Configuration du bot mise à jour.' : 'Bot configuration updated.',
+      });
+    } catch {
+      setBannerMsg({
+        kind: 'err',
+        text: isFr
+          ? 'Erreur réseau ou délai dépassé lors de la communication avec Discord. Réessayez.'
+          : 'Network error or timeout while communicating with Discord. Please try again.',
+      });
     } finally {
       setActionBusy(false);
+      setPendingAction(null);
     }
   };
 
@@ -687,9 +763,9 @@ export function DashboardView({ locale }: DashboardViewProps) {
           value: cleanVal,
         }),
       });
-      const data = (await res.json()) as GuildDetail & { error?: string };
-      if (!res.ok) {
-        setFormError(data.error || 'Failed to save event');
+      const data = (await res.json().catch(() => null)) as (GuildDetail & { error?: string }) | null;
+      if (!res.ok || !data) {
+        setFormError(data?.error || 'Failed to save event');
         return;
       }
       setDetail(data);
@@ -700,6 +776,10 @@ export function DashboardView({ locale }: DashboardViewProps) {
           ? `Salon #${previewChannelName} enregistré sur Discord.`
           : `Channel #${previewChannelName} saved on Discord.`,
       });
+    } catch {
+      setFormError(
+        isFr ? 'Erreur réseau lors de l’enregistrement.' : 'Network error while saving event.'
+      );
     } finally {
       setActionBusy(false);
     }
@@ -713,9 +793,9 @@ export function DashboardView({ locale }: DashboardViewProps) {
         `/api/dashboard/guilds/${encodeURIComponent(detail.guild.id)}/events/${encodeURIComponent(channelId)}`,
         { method: 'DELETE' }
       );
-      const data = (await res.json()) as GuildDetail & { error?: string };
-      if (!res.ok) {
-        setBannerMsg({ kind: 'err', text: data.error || 'Delete failed' });
+      const data = (await res.json().catch(() => null)) as (GuildDetail & { error?: string }) | null;
+      if (!res.ok || !data) {
+        setBannerMsg({ kind: 'err', text: data?.error || 'Delete failed' });
         return;
       }
       setDetail(data);
@@ -724,6 +804,11 @@ export function DashboardView({ locale }: DashboardViewProps) {
         kind: 'ok',
         text: isFr ? 'Salon événement supprimé de Discord.' : 'Event channel deleted from Discord.',
       });
+    } catch {
+      setBannerMsg({
+        kind: 'err',
+        text: isFr ? 'Erreur réseau lors de la suppression.' : 'Network error while deleting event.',
+      });
     } finally {
       setActionBusy(false);
     }
@@ -731,21 +816,25 @@ export function DashboardView({ locale }: DashboardViewProps) {
 
   const handleExportTxt = async () => {
     if (!detail) return;
-    const res = await apiFetch(`/api/dashboard/guilds/${encodeURIComponent(detail.guild.id)}/export`);
-    if (!res.ok) {
-      setBannerMsg({ kind: 'err', text: isFr ? 'Échec de l’export.' : 'Export failed.' });
-      return;
+    try {
+      const res = await apiFetch(`/api/dashboard/guilds/${encodeURIComponent(detail.guild.id)}/export`);
+      if (!res.ok) {
+        setBannerMsg({ kind: 'err', text: isFr ? 'Échec de l’export.' : 'Export failed.' });
+        return;
+      }
+      const text = await res.text();
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `logoto-export-${new Date().toISOString().slice(0, 10)}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setBannerMsg({ kind: 'err', text: isFr ? 'Erreur réseau lors de l’export.' : 'Export network error.' });
     }
-    const text = await res.text();
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `logoto-export-${new Date().toISOString().slice(0, 10)}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
   };
 
   const handleImportFile = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -771,9 +860,9 @@ export function DashboardView({ locale }: DashboardViewProps) {
           body: JSON.stringify({ content }),
         }
       );
-      const data = (await res.json()) as GuildDetail & { error?: string };
-      if (!res.ok) {
-        setBannerMsg({ kind: 'err', text: data.error || 'Import failed' });
+      const data = (await res.json().catch(() => null)) as (GuildDetail & { error?: string }) | null;
+      if (!res.ok || !data) {
+        setBannerMsg({ kind: 'err', text: data?.error || 'Import failed' });
         return;
       }
       setDetail(data);
@@ -799,6 +888,11 @@ export function DashboardView({ locale }: DashboardViewProps) {
             : `Discord import complete: ${s.created} created, ${s.updated} updated, ${s.configUpdated} config updated, ${s.skipped} skipped.`,
         });
       }
+    } catch {
+      setBannerMsg({
+        kind: 'err',
+        text: isFr ? 'Erreur réseau lors de l’importation.' : 'Network error during import.',
+      });
     } finally {
       setActionBusy(false);
     }
@@ -1474,11 +1568,15 @@ export function DashboardView({ locale }: DashboardViewProps) {
                 onClick={() => void handleUpdateConfig({ restoreRole: true })}
                 className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-xs font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
               >
-                <Shield className="w-3.5 h-3.5" aria-hidden="true" />
+                {pendingAction === 'restore_enable' ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Shield className="w-3.5 h-3.5" aria-hidden="true" />
+                )}
                 <span>
-                  {actionBusy
+                  {pendingAction === 'restore_enable'
                     ? isFr
-                      ? 'Attribution…'
+                      ? 'Attribution en cours…'
                       : 'Assigning…'
                     : isFr
                       ? 'Attribuer le rôle Logoto Restore au bot'
@@ -1527,9 +1625,21 @@ export function DashboardView({ locale }: DashboardViewProps) {
                     : 'Already had a Logoto configuration on this server?'}
                 </p>
                 <p className="text-xs text-[#b9bbbe] leading-relaxed">
-                  {isFr
-                    ? 'Si vous avez retiré puis réinvité le bot (ou si les salons existants sont privés), ajoutez le rôle Logoto Restore au bot dans les paramètres de votre serveur Discord afin qu’il retrouve ses salons, puis cliquez sur Actualiser.'
-                    : 'If you removed and re-invited the bot (or if existing channels are private), assign the Logoto Restore role to the bot in your Discord Server Settings so it can access its channels again, then click Refresh.'}
+                  {detail.config.restoreRoleId && !detail.config.restoreRoleEnabled
+                    ? detail.botCanManageRoles
+                      ? isFr
+                        ? 'Le rôle Logoto Restore est présent sur ce serveur. Cliquez sur « Récupérer avec Logoto Restore » pour l’attribuer au bot et retrouver vos anciens salons (fonctionne si Logoto Restore avait été activé avant de retirer le bot).'
+                        : 'The Logoto Restore role exists on this server. Click "Recover with Logoto Restore" to assign it to the bot and regain access to your old channels (works if Logoto Restore was enabled before removing the bot).'
+                      : isFr
+                        ? 'Le rôle Logoto Restore existe sur ce serveur, mais le bot n’a pas la permission Gérer les rôles. Attribuez-lui Logoto Restore manuellement dans Discord puis cliquez sur Actualiser.'
+                        : 'The Logoto Restore role exists on this server, but the bot lacks Manage Roles. Assign Logoto Restore to the bot manually in Discord, then click Refresh.'
+                    : detail.config.restoreRoleEnabled
+                      ? isFr
+                        ? 'Le rôle Logoto Restore est déjà attribué au bot, mais aucun salon #log-logoto n’est visible. Si Logoto Restore n’avait pas été activé avant de retirer le bot, autorisez manuellement le rôle du bot sur votre ancienne catégorie Logoto dans Discord puis cliquez sur Actualiser.'
+                        : 'The Logoto Restore role is already assigned to the bot, but no #log-logoto channel is visible. If Logoto Restore was not enabled before removing the bot, manually grant the bot role access to your old Logoto category in Discord, then click Refresh.'
+                      : isFr
+                        ? 'Si vous aviez déjà configuré Logoto et retiré le bot : ajoutez le rôle Logoto Restore au bot dans Discord (si vous l’aviez activé avant), ou autorisez le rôle du bot sur votre ancienne catégorie Logoto puis cliquez sur Actualiser. Sinon, initialisez Logoto ci-dessous.'
+                        : 'If you previously configured Logoto and removed the bot: assign the Logoto Restore role to the bot in Discord (if enabled beforehand), or grant the bot role access to your old Logoto category then click Refresh. Otherwise, initialize below.'}
                 </p>
               </div>
             </div>
@@ -1545,15 +1655,27 @@ export function DashboardView({ locale }: DashboardViewProps) {
                 <span>{isFr ? 'Actualiser' : 'Refresh'}</span>
               </button>
 
-              {detail.config.restoreRoleId && detail.botCanManageRoles && (
+              {detail.config.restoreRoleId && !detail.config.restoreRoleEnabled && detail.botCanManageRoles && (
                 <button
                   type="button"
                   disabled={actionBusy}
                   onClick={() => void handleUpdateConfig({ restoreRole: true })}
                   className="inline-flex items-center justify-center gap-2 h-9 px-3.5 rounded-lg bg-[#8c935d] hover:bg-[#767d4f] text-xs font-bold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
                 >
-                  <Shield className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>{isFr ? 'Récupérer avec Logoto Restore' : 'Recover with Logoto Restore'}</span>
+                  {pendingAction === 'restore_enable' ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Shield className="w-3.5 h-3.5" aria-hidden="true" />
+                  )}
+                  <span>
+                    {pendingAction === 'restore_enable'
+                      ? isFr
+                        ? 'Récupération…'
+                        : 'Recovering…'
+                      : isFr
+                        ? 'Récupérer avec Logoto Restore'
+                        : 'Recover with Logoto Restore'}
+                  </span>
                 </button>
               )}
             </div>
@@ -1731,16 +1853,31 @@ export function DashboardView({ locale }: DashboardViewProps) {
             <div className="pt-5 border-t border-white/[0.08] space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Shield className="w-4 h-4 text-[#a3ab72] shrink-0" aria-hidden="true" />
                     <span className="text-sm font-semibold text-[#F2F3F5]">
                       {isFr ? 'Rôle Logoto Restore' : 'Logoto Restore Role'}
                     </span>
+                    <span
+                      className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
+                        detail.config.restoreRoleEnabled
+                          ? 'bg-[#8c935d]/25 text-[#c7cf8f]'
+                          : 'bg-[#1e1f22] text-[#b9bbbe]'
+                      }`}
+                    >
+                      {detail.config.restoreRoleEnabled
+                        ? isFr
+                          ? `Actif (${detail.config.restoreRoleName || 'Logoto Restore'})`
+                          : `Active (${detail.config.restoreRoleName || 'Logoto Restore'})`
+                        : isFr
+                          ? 'Inactif'
+                          : 'Inactive'}
+                    </span>
                   </div>
                   <p className="text-xs text-[#b9bbbe] leading-relaxed max-w-xl">
                     {isFr
-                      ? 'Crée un rôle sans permission particulière sur le serveur, l’ajoute au bot et lui applique les mêmes permissions que Logoto sur les salons créés pour rétablir la configuration si vous retirez puis remettez le bot.'
-                      : 'Creates a role with no server-wide permissions, assigns it to the bot, and mirrors Logoto’s channel permissions across created channels so configuration is easily restored if the bot is removed and re-added.'}
+                      ? 'Crée un rôle sans permission serveur globale, l’ajoute au bot et copie ses permissions sur les salons Logoto. Si vous retirez puis réinvitez le bot, ce rôle permet de retrouver automatiquement la configuration.'
+                      : 'Creates a role with no server-wide permissions, assigns it to the bot, and mirrors Logoto’s channel permissions. If you remove and re-invite the bot, this role lets it recover your configuration.'}
                   </p>
                 </div>
 
@@ -1748,31 +1885,53 @@ export function DashboardView({ locale }: DashboardViewProps) {
                   <div
                     role="group"
                     aria-label={isFr ? 'Activer ou désactiver Logoto Restore' : 'Toggle Logoto Restore'}
-                    className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#1e1f22] border border-white/10 min-w-[200px]"
+                    className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-[#1e1f22] border border-white/10 min-w-[215px]"
                   >
                     <button
                       type="button"
                       disabled={actionBusy || !detail.botCanManageRoles || detail.config.restoreRoleEnabled}
                       onClick={() => void handleUpdateConfig({ restoreRole: true })}
-                      className={`h-9 px-3 rounded-md text-xs font-semibold transition-colors cursor-pointer disabled:cursor-default ${
+                      className={`inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-md text-xs font-semibold transition-colors cursor-pointer disabled:cursor-default ${
                         detail.config.restoreRoleEnabled
                           ? 'bg-[#8c935d] text-[#F2F3F5]'
                           : 'text-[#b9bbbe] hover:text-[#F2F3F5] disabled:opacity-50'
                       }`}
                     >
-                      {isFr ? 'Activé' : 'Enabled'}
+                      {pendingAction === 'restore_enable' && (
+                        <RefreshCw className="w-3 h-3 animate-spin" aria-hidden="true" />
+                      )}
+                      <span>
+                        {pendingAction === 'restore_enable'
+                          ? isFr
+                            ? 'Activation…'
+                            : 'Enabling…'
+                          : isFr
+                            ? 'Activé'
+                            : 'Enabled'}
+                      </span>
                     </button>
                     <button
                       type="button"
                       disabled={actionBusy || !detail.botCanManageRoles || !detail.config.restoreRoleEnabled}
                       onClick={() => void handleUpdateConfig({ restoreRole: false })}
-                      className={`h-9 px-3 rounded-md text-xs font-semibold transition-colors cursor-pointer disabled:cursor-default ${
+                      className={`inline-flex items-center justify-center gap-1.5 h-9 px-3 rounded-md text-xs font-semibold transition-colors cursor-pointer disabled:cursor-default ${
                         !detail.config.restoreRoleEnabled
                           ? 'bg-[#313338] text-[#F2F3F5]'
                           : 'text-[#b9bbbe] hover:text-[#f04747] disabled:opacity-50'
                       }`}
                     >
-                      {isFr ? 'Désactivé' : 'Disabled'}
+                      {pendingAction === 'restore_disable' && (
+                        <RefreshCw className="w-3 h-3 animate-spin" aria-hidden="true" />
+                      )}
+                      <span>
+                        {pendingAction === 'restore_disable'
+                          ? isFr
+                            ? 'Suppression…'
+                            : 'Removing…'
+                          : isFr
+                            ? 'Désactivé'
+                            : 'Disabled'}
+                      </span>
                     </button>
                   </div>
 
@@ -1783,8 +1942,19 @@ export function DashboardView({ locale }: DashboardViewProps) {
                       onClick={() => void handleUpdateConfig({ syncRestoreRole: true })}
                       className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-lg bg-[#1e1f22] hover:bg-[#313338] border border-white/15 text-xs font-semibold text-[#F2F3F5] transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
                     >
-                      <RefreshCw className="w-3.5 h-3.5 text-[#a3ab72]" aria-hidden="true" />
-                      <span>{isFr ? 'Synchroniser' : 'Sync'}</span>
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 text-[#a3ab72] ${pendingAction === 'restore_sync' ? 'animate-spin' : ''}`}
+                        aria-hidden="true"
+                      />
+                      <span>
+                        {pendingAction === 'restore_sync'
+                          ? isFr
+                            ? 'Synchronisation…'
+                            : 'Syncing…'
+                          : isFr
+                            ? 'Synchroniser'
+                            : 'Sync'}
+                      </span>
                     </button>
                   )}
                 </div>

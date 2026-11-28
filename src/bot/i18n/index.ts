@@ -159,6 +159,7 @@ const MESSAGES = {
     restoreMissingManageRoles: "Logoto n'a pas la permission **Gérer les rôles** (`ManageRoles`) pour créer ou gérer le rôle `Logoto Restore`.",
     restoreRoleHierarchyError: "Le rôle `Logoto Restore` est placé au-dessus du rôle le plus élevé de Logoto. Déplacez le rôle du bot au-dessus dans les paramètres du serveur.",
     restoreMissingMember: "Impossible de récupérer le profil du bot sur ce serveur.",
+    restoreRecoverPartialMsg: "Le rôle {role} a été attribué au bot (**{count}** salon(s) synchronisé(s)), mais certaines permissions manquent encore. Si `Logoto Restore` n'était pas activé avant de retirer le bot, accordez directement les permissions au rôle du bot sur la catégorie `Logoto` dans Discord.",
 
     // Create Event
     createEventTitle: "Créer un événement programmé",
@@ -366,6 +367,7 @@ const MESSAGES = {
     restoreMissingManageRoles: "Logoto is missing the **Manage Roles** (`ManageRoles`) permission to create or manage the `Logoto Restore` role.",
     restoreRoleHierarchyError: "The `Logoto Restore` role is positioned above Logoto's highest role. Move Logoto's role higher in Server Settings.",
     restoreMissingMember: "Unable to fetch the bot's member profile on this server.",
+    restoreRecoverPartialMsg: "Role {role} was assigned to the bot (**{count}** channel(s) synced), but some permissions are still missing. If `Logoto Restore` was not enabled before removing the bot, grant the bot role access to the `Logoto` category directly in Discord.",
 
     // Create Event
     createEventTitle: "Create Scheduled Event",

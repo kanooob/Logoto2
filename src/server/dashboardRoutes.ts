@@ -279,47 +279,56 @@ export function registerDashboardRoutes(
       return;
     }
 
-    const normalizedTz = normalizeTimeZone(rawTz) ?? 'UTC';
-    const existing = await getGuildConfig(guild);
-    const { logChannel, created } = await ensureLogChannel(guild);
-    const todayKey = getLocalDateParts(normalizedTz).dateKey;
+    try {
+      const normalizedTz = normalizeTimeZone(rawTz) ?? 'UTC';
+      const existing = await getGuildConfig(guild);
+      const { logChannel, created } = await ensureLogChannel(guild);
+      const todayKey = getLocalDateParts(normalizedTz).dateKey;
 
-    const updated = await setGuildConfig(guild, {
-      timezone: normalizedTz,
-      locale: rawLocale,
-      lastRunDate: existing.lastRunDate ?? todayKey,
-    });
-
-    if (wantRestoreRole) {
-      const roleRes = await enableRestoreRole(guild);
-      if (!roleRes.ok) {
-        res.status(403).json({ error: getRestoreErrorMessage(rawLocale, roleRes.reason) });
-        return;
-      }
-    }
-
-    if (created) {
-      const topic = formatConfigTopic(updated.timezone, updated.locale, {
-        restoreRole: wantRestoreRole || updated.restoreRoleEnabled,
+      const updated = await setGuildConfig(guild, {
+        timezone: normalizedTz,
+        locale: rawLocale,
+        lastRunDate: existing.lastRunDate ?? todayKey,
       });
-      const summaryEmbed = new EmbedBuilder()
-        .setColor(PRIMARY_COLOR)
-        .setTitle(t(updated.locale, 'pinnedSummaryTitle'))
-        .setDescription(t(updated.locale, 'pinnedSummaryDesc'))
-        .setFooter({ text: t(updated.locale, 'pinnedSummaryFooter', { topic }) })
-        .setTimestamp();
 
-      try {
-        const sent = await logChannel.send({ embeds: [summaryEmbed] });
-        await sent.pin().catch(() => {});
-      } catch {
-        // Ignore pin failures
+      if (wantRestoreRole) {
+        const roleRes = await enableRestoreRole(guild, { skipFetch: true });
+        if (!roleRes.ok) {
+          res.status(403).json({ error: getRestoreErrorMessage(rawLocale, roleRes.reason) });
+          return;
+        }
       }
-      await followAnnouncementsInLogChannel(guild, logChannel);
-    }
 
-    await guild.channels.fetch().catch(() => null);
-    res.json(await buildGuildDetailResponse(guild));
+      if (created) {
+        const topic = formatConfigTopic(updated.timezone, updated.locale, {
+          restoreRole: wantRestoreRole || updated.restoreRoleEnabled,
+        });
+        const summaryEmbed = new EmbedBuilder()
+          .setColor(PRIMARY_COLOR)
+          .setTitle(t(updated.locale, 'pinnedSummaryTitle'))
+          .setDescription(t(updated.locale, 'pinnedSummaryDesc'))
+          .setFooter({ text: t(updated.locale, 'pinnedSummaryFooter', { topic }) })
+          .setTimestamp();
+
+        try {
+          const sent = await logChannel.send({ embeds: [summaryEmbed] });
+          await sent.pin().catch(() => {});
+        } catch {
+          // Ignore pin failures
+        }
+        await followAnnouncementsInLogChannel(guild, logChannel);
+      }
+
+      res.json(await buildGuildDetailResponse(guild));
+    } catch (err) {
+      console.error('[Logoto] Dashboard setup failed:', err);
+      res.status(500).json({
+        error:
+          rawLocale === 'en'
+            ? 'Failed to initialize Logoto on Discord. Please verify bot permissions and try again.'
+            : 'Impossible d’initialiser Logoto sur Discord. Vérifiez les permissions du bot et réessayez.',
+      });
+    }
   });
 
   // Update timezone, language, and/or Logoto Restore role (/settings)
@@ -331,67 +340,103 @@ export function registerDashboardRoutes(
     const nextLocale: SupportedLocale =
       req.body?.locale === 'fr' || req.body?.locale === 'en' ? req.body.locale : current.locale;
 
-    if (req.body?.restoreRole === true) {
-      const roleRes = await enableRestoreRole(guild);
-      if (!roleRes.ok) {
-        res.status(403).json({ error: getRestoreErrorMessage(nextLocale, roleRes.reason) });
-        return;
-      }
-      await guild.channels.fetch().catch(() => null);
-    }
+    try {
+      let restoreSummary:
+        | { action: 'enabled' | 'disabled' | 'synced'; syncedChannels: number; createdRole: boolean }
+        | undefined;
 
-    const needsChannelPermsCheck =
-      req.body?.timezone !== undefined ||
-      Boolean(req.body?.locale) ||
-      req.body?.restoreRole === false ||
-      req.body?.syncRestoreRole === true;
-
-    if (needsChannelPermsCheck) {
-      const perms = await checkBotGuildPermissions(guild, nextLocale);
-      if (!perms.ok) {
-        res.status(403).json({ error: perms.embed.data.description ?? 'Permissions du bot manquantes.' });
-        return;
-      }
-    }
-
-    let nextTz: string | undefined;
-    if (typeof req.body?.timezone === 'string') {
-      const candidate = req.body.timezone.trim();
-      if (!isValidTimeZone(candidate)) {
-        res.status(400).json({ error: t(nextLocale, 'invalidTimezone', { tz: candidate }) });
-        return;
-      }
-      nextTz = candidate;
-    }
-
-    if (nextTz !== undefined || req.body?.locale) {
-      await setGuildConfig(guild, {
-        timezone: nextTz,
-        locale: req.body?.locale ? nextLocale : undefined,
-      });
-    }
-
-    if (req.body?.restoreRole === false) {
-      const roleRes = await disableRestoreRole(guild);
-      if (!roleRes.ok) {
-        res.status(403).json({ error: getRestoreErrorMessage(nextLocale, roleRes.reason) });
-        return;
-      }
-    } else if (req.body?.restoreRole !== true && req.body?.syncRestoreRole === true) {
-      const existingRole = findRestoreRole(guild);
-      if (existingRole) {
-        await syncRestoreRoleOverwrites(guild, existingRole);
-      } else {
-        const roleRes = await enableRestoreRole(guild);
+      if (req.body?.restoreRole === true) {
+        const roleRes = await enableRestoreRole(guild, { skipFetch: true });
         if (!roleRes.ok) {
           res.status(403).json({ error: getRestoreErrorMessage(nextLocale, roleRes.reason) });
           return;
         }
+        restoreSummary = {
+          action: 'enabled',
+          syncedChannels: roleRes.syncedChannels,
+          createdRole: roleRes.createdRole,
+        };
       }
-    }
 
-    await guild.channels.fetch().catch(() => null);
-    res.json(await buildGuildDetailResponse(guild));
+      const needsChannelPermsCheck =
+        req.body?.timezone !== undefined ||
+        Boolean(req.body?.locale) ||
+        req.body?.restoreRole === false ||
+        req.body?.syncRestoreRole === true;
+
+      if (needsChannelPermsCheck) {
+        const perms = await checkBotGuildPermissions(guild, nextLocale);
+        if (!perms.ok) {
+          res.status(403).json({ error: perms.embed.data.description ?? 'Permissions du bot manquantes.' });
+          return;
+        }
+      }
+
+      let nextTz: string | undefined;
+      if (typeof req.body?.timezone === 'string') {
+        const candidate = req.body.timezone.trim();
+        if (!isValidTimeZone(candidate)) {
+          res.status(400).json({ error: t(nextLocale, 'invalidTimezone', { tz: candidate }) });
+          return;
+        }
+        nextTz = candidate;
+      }
+
+      if (nextTz !== undefined || req.body?.locale) {
+        await setGuildConfig(guild, {
+          timezone: nextTz,
+          locale: req.body?.locale ? nextLocale : undefined,
+        });
+      }
+
+      if (req.body?.restoreRole === false) {
+        const roleRes = await disableRestoreRole(guild, { skipFetch: true });
+        if (!roleRes.ok) {
+          res.status(403).json({ error: getRestoreErrorMessage(nextLocale, roleRes.reason) });
+          return;
+        }
+        restoreSummary = {
+          action: 'disabled',
+          syncedChannels: 0,
+          createdRole: false,
+        };
+      } else if (req.body?.restoreRole !== true && req.body?.syncRestoreRole === true) {
+        const existingRole = findRestoreRole(guild);
+        const botHasRole = Boolean(
+          existingRole && guild.members.me?.roles.cache.has(existingRole.id)
+        );
+        if (existingRole && botHasRole) {
+          const syncedChannels = await syncRestoreRoleOverwrites(guild, existingRole);
+          restoreSummary = {
+            action: 'synced',
+            syncedChannels,
+            createdRole: false,
+          };
+        } else {
+          const roleRes = await enableRestoreRole(guild, { skipFetch: true });
+          if (!roleRes.ok) {
+            res.status(403).json({ error: getRestoreErrorMessage(nextLocale, roleRes.reason) });
+            return;
+          }
+          restoreSummary = {
+            action: 'synced',
+            syncedChannels: roleRes.syncedChannels,
+            createdRole: roleRes.createdRole,
+          };
+        }
+      }
+
+      const detail = await buildGuildDetailResponse(guild);
+      res.json(restoreSummary ? { ...detail, restoreSummary } : detail);
+    } catch (err) {
+      console.error('[Logoto] Dashboard config update failed:', err);
+      res.status(500).json({
+        error:
+          nextLocale === 'en'
+            ? 'Failed to update Discord configuration. Please check bot role hierarchy and permissions.'
+            : 'Échec de la mise à jour sur Discord. Vérifiez la hiérarchie des rôles et les permissions du bot.',
+      });
+    }
   });
 
   // Create or overwrite scheduled event (/settings -> Créer un événement)
